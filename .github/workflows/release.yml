@@ -65,8 +65,20 @@ jobs:
       - name: Sanity-check CMakeLists.txt version matches tag
         shell: bash
         run: |
-          CMAKE_VERSION=$(grep -oP 'project\(beacon_sdk\s+VERSION\s+\K[0-9.]+' CMakeLists.txt)
+          # Use python3 for portable multi-line regex parsing of the CMake
+          # project(...) block. grep -P / -z is not portable across the
+          # GNU (Linux) / BSD (macOS) / Git-bash (Windows) variants.
+          CMAKE_VERSION=$(python3 -c "
+          import re, sys
+          with open('CMakeLists.txt') as f:
+              m = re.search(r'project\(beacon_sdk.*?VERSION\s+([0-9.]+)', f.read(), re.DOTALL)
+              print(m.group(1) if m else '')
+          ")
           TAG_VERSION="${{ steps.version.outputs.VERSION }}"
+          if [ -z "$CMAKE_VERSION" ]; then
+            echo "::error::Could not extract VERSION from CMakeLists.txt"
+            exit 1
+          fi
           if [ "$CMAKE_VERSION" != "$TAG_VERSION" ]; then
             echo "::error::CMakeLists.txt VERSION ($CMAKE_VERSION) does not match tag ($TAG_VERSION)"
             exit 1
