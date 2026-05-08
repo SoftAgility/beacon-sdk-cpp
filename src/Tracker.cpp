@@ -458,9 +458,6 @@ void Tracker::track_impl(std::string category, std::string name, std::string act
             }
         }
 
-        // Trigger preflight on first track/startSession call
-        trigger_preflight();
-
     } catch (const std::exception& ex) {
         log(LogLevel::Warning, std::string("beacon: track() internal error: ") + ex.what());
     } catch (...) {
@@ -579,9 +576,6 @@ void Tracker::start_session_impl(std::string actor_id) {
                 }
             } catch (...) {}
         }).detach();
-
-        // Trigger preflight on first track/startSession call
-        trigger_preflight();
 
     } catch (const std::exception& ex) {
         log(LogLevel::Warning, std::string("beacon: startSession() internal error: ") + ex.what());
@@ -1012,42 +1006,6 @@ void Tracker::validate_actor_id(const std::string& actor_id) const {
     if (actor_id.size() > 512) {
         throw std::invalid_argument("actorId must not exceed 512 characters.");
     }
-}
-
-void Tracker::trigger_preflight() {
-    // Use shared_from_this() to keep the Tracker alive during the preflight request.
-    // If the Tracker is already being destroyed, weak_from_this() expires and we skip.
-    std::call_once(preflight_flag_, [this]() {
-        std::string api_key = options_.api_key;
-        std::string base_url = options_.api_base_url;
-        auto logger = options_.logger;
-        std::weak_ptr<Tracker> weak_self;
-        try {
-            weak_self = shared_from_this();
-        } catch (...) {
-            // shared_from_this() may throw if no shared_ptr owns this.
-            return;
-        }
-
-        std::thread([weak_self, api_key, base_url, logger]() {
-            try {
-                internal::HttpClient http;
-                if (!http.init(logger)) return;
-
-                std::string url = base_url + "/v1/events";
-                auto result = http.post_json(url, api_key, "[]");
-
-                if (result.status_code == 401) {
-                    if (auto self = weak_self.lock()) {
-                        self->halted_.store(true);
-                        self->flush_status_.store(FlushStatus::Offline);
-                        self->log(LogLevel::Error,
-                            "beacon: API key rejected (401). Check Options::api_key. Event delivery halted.");
-                    }
-                }
-            } catch (...) {}
-        }).detach();
-    });
 }
 
 // ---------- Breadcrumb helpers ----------

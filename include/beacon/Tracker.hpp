@@ -134,7 +134,6 @@ private:
     void track_exception_impl(const std::exception& ex, std::string actor_id,
                               ExceptionSeverity severity);
 
-    void trigger_preflight();
     void flush_thread_loop();
     void drain_disk_queue();
     void drain_memory_queue();
@@ -192,9 +191,6 @@ private:
     // Environment data
     std::string environment_data_base64_;
     std::atomic<bool> environment_sent_{false};
-
-    // Preflight
-    std::once_flag preflight_flag_;
 
     // Device ID and data directory
     std::string device_id_;

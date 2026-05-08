@@ -1,4 +1,5 @@
 #include "HttpClient.hpp"
+#include "beacon/Version.hpp"
 
 #include <cstdlib>
 #include <cstring>
@@ -102,7 +103,8 @@ HttpResult HttpClient::post_json(const std::string& url, const std::string& api_
 
     // Identify the SDK in HTTP request logs so backend operators can
     // distinguish official-SDK traffic from raw-curl/custom integrations.
-    curl_easy_setopt(curl_, CURLOPT_USERAGENT, "beacon-sdk-cpp/1.0.0");
+    // Derived from BEACON_VERSION_STRING so it auto-tracks the version bump.
+    curl_easy_setopt(curl_, CURLOPT_USERAGENT, "beacon-sdk-cpp/" BEACON_VERSION_STRING);
 
     // Strict TLS verification (peer cert chain + hostname). Defaults to ON
     // in libcurl 7.x+ but a future contributor toggling these silently

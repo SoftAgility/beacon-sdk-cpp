@@ -6,6 +6,16 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [1.0.1] - 2026-05-08
+
+### Removed
+
+- **Init-time preflight check.** The SDK previously fired an empty-batch POST to `/v1/events` on first `track()` / `startSession()` to detect a 401 response from a bad API key before any real events were queued. This was a workaround for not having a logger — the only way to surface a wrong API key. With the `ILogger` introduced in 1.0.0, a wrong API key now surfaces naturally on the first real flush via the `Warning`-level `HTTP POST .../v1/events returned 401 — ...` log line. The preflight added one HTTP request per app start, polluted the backend's logs with a benign 400 `batch_empty` response, and produced a confusing Warning in customer-side logs (the backend correctly rejects empty batches with 400). Removing it aligns the C++ SDK with the JS SDK (which never had preflight) and the rest of the analytics-SDK industry (Segment, Amplitude, Mixpanel, PostHog all queue eagerly and surface auth failures on first real flush).
+
+### Changed
+
+- **`User-Agent` header now derives from `BEACON_VERSION_STRING`** instead of being hardcoded, so it auto-tracks future version bumps and never drifts.
+
 ## [1.0.0] - 2026-05-08
 
 ### Added
