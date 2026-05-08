@@ -46,4 +46,21 @@ target_include_directories(beacon_tests
 )
 
 include(GoogleTest)
-gtest_discover_tests(beacon_tests)
+# DISCOVERY_MODE PRE_TEST defers test enumeration until ctest runs the binary.
+# The default (POST_BUILD) tries to run the test exe at configure time, which
+# fails on Windows because runtime DLLs (libcurl.dll, beacon_sdk.dll) are not
+# yet placed next to the exe — gtest_discover_tests crashes with a generic
+# "Error running test executable".
+gtest_discover_tests(beacon_tests DISCOVERY_MODE PRE_TEST)
+
+# On Windows, place runtime DLLs (libcurl + transitive deps) next to the test
+# binary so it can launch when ctest invokes it. CMake 3.21+ resolves the
+# import-lib chain automatically via $<TARGET_RUNTIME_DLLS>.
+if(WIN32)
+    add_custom_command(TARGET beacon_tests POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                $<TARGET_RUNTIME_DLLS:beacon_tests>
+                $<TARGET_FILE_DIR:beacon_tests>
+        COMMAND_EXPAND_LISTS
+    )
+endif()
