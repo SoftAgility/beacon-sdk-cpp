@@ -67,3 +67,22 @@ vcpkg_installed/
 # test output & cache
 Testing/
 .cache/
+
+# CMake build directories
+build/
+build-*/
+cmake-build-*/
+out/
+
+# Editor / IDE config
+.vs/
+.vscode/
+.idea/
+
+# clangd / cmake compile-commands cache
+compile_commands.json
+.cache/
+
+# Local smoke test artifacts
+smoke.html
+*.tgz
