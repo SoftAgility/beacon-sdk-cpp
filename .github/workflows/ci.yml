@@ -1,0 +1,66 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  build-test:
+    name: ${{ matrix.os }} / ${{ matrix.cxx }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            cxx: g++-13
+            cc: gcc-13
+            tls_setup: sudo apt-get update && sudo apt-get install -y libssl-dev
+          - os: macos-latest
+            cxx: clang++
+            cc: clang
+            # macOS already has OpenSSL via Homebrew (kept under /opt/homebrew); set CMAKE_PREFIX_PATH
+            tls_setup: brew install openssl@3 && echo "CMAKE_PREFIX_PATH=$(brew --prefix openssl@3)" >> $GITHUB_ENV
+          - os: windows-latest
+            cxx: cl
+            cc: cl
+            tls_setup: echo "Schannel is built into Windows — no setup needed"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install TLS toolchain
+        shell: bash
+        run: ${{ matrix.tls_setup }}
+
+      - name: Configure
+        shell: bash
+        env:
+          CC: ${{ matrix.cc }}
+          CXX: ${{ matrix.cxx }}
+        run: |
+          cmake -B build -S . \
+                -DCMAKE_BUILD_TYPE=Release \
+                -DBEACON_BUILD_TESTS=ON \
+                -DBEACON_BUILD_EXAMPLES=ON
+
+      - name: Build
+        run: cmake --build build --config Release --parallel
+
+      - name: Test
+        run: ctest --test-dir build -C Release --output-on-failure
+
+      - name: Verify install rules produce a clean prefix
+        shell: bash
+        run: |
+          cmake --install build --config Release --prefix $PWD/install-test
+          # Sanity-check the install layout
+          test -f install-test/include/beacon/beacon.hpp        || { echo "MISSING: header"; exit 1; }
+          test -f install-test/include/beacon/Version.hpp       || { echo "MISSING: Version.hpp"; exit 1; }
+          test -f install-test/lib/cmake/beacon_sdk/beacon_sdk-config.cmake || { echo "MISSING: cmake config"; exit 1; }
+          echo "Install layout OK."
