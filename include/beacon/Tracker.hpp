@@ -74,6 +74,41 @@ public:
     // End the current session.
     void endSession();
 
+    /// Set the current account context. After this call, all subsequent events,
+    /// sessions, and exception reports will include account_id until cleared or
+    /// reset(). Use the customer's pseudonymous organization/account identifier;
+    /// do not pass personally identifying strings like email addresses.
+    ///
+    /// account_id is silently ignored when:
+    ///   - empty or whitespace-only
+    ///   - longer than 256 characters
+    ///   - contains control characters (< 32, U+2028, U+2029)
+    /// An invalid input does NOT overwrite a previously valid value.
+    void setAccount(std::string account_id);
+
+    /// Clear the account context. Subsequent events emit with no account_id.
+    void clearAccount();
+
+    /// Set the current license context. After this call, all subsequent events,
+    /// sessions, and exception reports will include license_id until cleared or
+    /// reset().
+    ///
+    /// PREFER PER-CONTRACT IDs (a single string shared across all of a customer's
+    /// users — e.g., a subscription ID, site key, or bundle SKU) over per-user
+    /// IDs. Per-contract IDs give the richest Beacon analytics:
+    ///   - License Detail page shows meaningful per-license usage
+    ///   - "Seen under multiple accounts" governance warning (ED-1137) becomes
+    ///     a useful signal
+    /// Per-user license IDs work but reduce the License Detail page to a
+    /// near-duplicate of the Actor Identities view and disable the multi-account
+    /// sharing warning. See the Beacon docs section "Modeling licenses".
+    ///
+    /// license_id is silently ignored on the same validation rules as setAccount.
+    void setLicense(std::string license_id);
+
+    /// Clear the license context. Subsequent events emit with no license_id.
+    void clearLicense();
+
     // Track an exception using the identified actor.
     void trackException(const std::exception& ex,
                         ExceptionSeverity severity = ExceptionSeverity::NonFatal);
@@ -126,6 +161,14 @@ private:
     void log(LogLevel level, const std::string& message) const;
     void validate_actor_id(const std::string& actor_id) const;
 
+    // Validates an account_id or license_id against the ingest contract:
+    // 1-256 chars after trim, no whitespace-only, no control chars.
+    // Returns true (and writes the trimmed value into `out`) on success;
+    // false (logs at Warning level) on failure. Matches the .NET SDK's
+    // ValidateAndTrimContextId / JS SDK's validateContextId.
+    bool validate_and_trim_context_id(const std::string& input, const char* field_name,
+                                      std::string& out) const;
+
     void track_impl(std::string category, std::string name, std::string actor_id,
                     std::optional<std::unordered_map<std::string, std::string>> properties);
 
@@ -163,6 +206,10 @@ private:
     mutable std::mutex session_mutex_;
     std::string actor_id_;
     std::string session_id_;
+
+    // Account / license context — set via setAccount/setLicense, cleared by reset().
+    std::string account_id_;
+    std::string license_id_;
 
     // Memory queue
     mutable std::mutex queue_mutex_;

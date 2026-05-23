@@ -410,11 +410,18 @@ void Tracker::track_impl(std::string category, std::string name, std::string act
         j["source_app"] = options_.app_name;
         j["source_version"] = options_.app_version;
 
-        // Session ID
+        // Session ID + account/license context
         {
             std::lock_guard<std::mutex> lock(session_mutex_);
             if (!session_id_.empty()) {
                 j["session_id"] = session_id_;
+            }
+            // Omit when unset — backend distinguishes "absent" from "present but invalid".
+            if (!account_id_.empty()) {
+                j["account_id"] = account_id_;
+            }
+            if (!license_id_.empty()) {
+                j["license_id"] = license_id_;
             }
         }
 
@@ -518,6 +525,10 @@ void Tracker::start_session_impl(std::string actor_id) {
         std::string new_session_id = internal::new_uuid_v7();
         std::string started_at = utc_iso8601_now();
 
+        // Snapshot account/license context for the start payload below.
+        std::string account_snapshot;
+        std::string license_snapshot;
+
         {
             std::lock_guard<std::mutex> lock(session_mutex_);
 
@@ -528,6 +539,9 @@ void Tracker::start_session_impl(std::string actor_id) {
 
             session_id_ = new_session_id;
             environment_sent_.store(false); // Reset for new session
+
+            account_snapshot = account_id_;
+            license_snapshot = license_id_;
         }
 
         // End old session in background (fire-and-forget)
@@ -560,7 +574,8 @@ void Tracker::start_session_impl(std::string actor_id) {
         auto logger_start = options_.logger;
 
         std::thread([new_session_id, actor_id, app_name, app_version,
-                     started_at, api_key, base_url, logger_start]() {
+                     started_at, api_key, base_url, logger_start,
+                     account_snapshot, license_snapshot]() {
             try {
                 nlohmann::json body;
                 body["session_id"] = new_session_id;
@@ -568,6 +583,8 @@ void Tracker::start_session_impl(std::string actor_id) {
                 body["source_app"] = app_name;
                 body["source_version"] = app_version;
                 body["started_at"] = started_at;
+                if (!account_snapshot.empty()) body["account_id"] = account_snapshot;
+                if (!license_snapshot.empty()) body["license_id"] = license_snapshot;
 
                 internal::HttpClient http;
                 if (http.init(logger_start)) {
@@ -624,6 +641,48 @@ void Tracker::endSession() {
     } catch (...) {
         log(LogLevel::Warning, "beacon: endSession() internal error (unknown).");
     }
+}
+
+// ---------- Account / License context API ----------
+
+void Tracker::setAccount(std::string account_id) {
+    if (disposed_.load() || opted_out_.load()) return;
+    std::string validated;
+    if (!validate_and_trim_context_id(account_id, "account_id", validated)) return;
+    {
+        std::lock_guard<std::mutex> lock(session_mutex_);
+        account_id_ = std::move(validated);
+    }
+    log(LogLevel::Debug, "beacon: setAccount applied.");
+}
+
+void Tracker::clearAccount() {
+    if (disposed_.load()) return;
+    {
+        std::lock_guard<std::mutex> lock(session_mutex_);
+        account_id_.clear();
+    }
+    log(LogLevel::Debug, "beacon: clearAccount applied.");
+}
+
+void Tracker::setLicense(std::string license_id) {
+    if (disposed_.load() || opted_out_.load()) return;
+    std::string validated;
+    if (!validate_and_trim_context_id(license_id, "license_id", validated)) return;
+    {
+        std::lock_guard<std::mutex> lock(session_mutex_);
+        license_id_ = std::move(validated);
+    }
+    log(LogLevel::Debug, "beacon: setLicense applied.");
+}
+
+void Tracker::clearLicense() {
+    if (disposed_.load()) return;
+    {
+        std::lock_guard<std::mutex> lock(session_mutex_);
+        license_id_.clear();
+    }
+    log(LogLevel::Debug, "beacon: clearLicense applied.");
 }
 
 // ---------- Consent API (FR-1129, FR-1130) ----------
@@ -736,8 +795,10 @@ void Tracker::reset() {
                 }).detach();
             }
 
-            // Step 2: Clear actor ID
+            // Step 2: Clear actor ID + account/license context.
             actor_id_.clear();
+            account_id_.clear();
+            license_id_.clear();
         }
 
         // Step 3: Clear in-memory queue
@@ -830,9 +891,13 @@ void Tracker::track_exception_impl(const std::exception& ex, std::string actor_i
         if (stack_trace.size() > 32768) stack_trace.resize(32768);
 
         std::string current_session;
+        std::string current_account;
+        std::string current_license;
         {
             std::lock_guard<std::mutex> lock(session_mutex_);
             current_session = session_id_;
+            current_account = account_id_;
+            current_license = license_id_;
         }
 
         // Snapshot breadcrumbs
@@ -858,6 +923,14 @@ void Tracker::track_exception_impl(const std::exception& ex, std::string actor_i
 
         if (!current_session.empty()) {
             body["session_id"] = current_session;
+        }
+
+        if (!current_account.empty()) {
+            body["account_id"] = current_account;
+        }
+
+        if (!current_license.empty()) {
+            body["license_id"] = current_license;
         }
 
         if (!bc_snapshot.empty()) {
@@ -1006,6 +1079,56 @@ void Tracker::validate_actor_id(const std::string& actor_id) const {
     if (actor_id.size() > 512) {
         throw std::invalid_argument("actorId must not exceed 512 characters.");
     }
+}
+
+bool Tracker::validate_and_trim_context_id(const std::string& input, const char* field_name,
+                                           std::string& out) const {
+    if (input.empty()) {
+        log(LogLevel::Warning, std::string("beacon: ") + field_name +
+            " must be a non-empty string -- ignored.");
+        return false;
+    }
+
+    // Trim leading + trailing ASCII whitespace.
+    auto begin = input.find_first_not_of(" \t\r\n\f\v");
+    auto end = input.find_last_not_of(" \t\r\n\f\v");
+    if (begin == std::string::npos) {
+        log(LogLevel::Warning, std::string("beacon: ") + field_name +
+            " cannot be whitespace-only -- ignored.");
+        return false;
+    }
+    std::string trimmed = input.substr(begin, end - begin + 1);
+
+    if (trimmed.size() > 256) {
+        log(LogLevel::Warning, std::string("beacon: ") + field_name +
+            " exceeds 256 characters -- ignored.");
+        return false;
+    }
+
+    // Reject any control character. We iterate as bytes since these IDs are
+    // ASCII-typical (subscription IDs, UUIDs, vendor strings). Code points
+    // < 32 cover \r, \n, \t, \0, \f, \v, all C0 controls. U+2028 (E2 80 A8)
+    // and U+2029 (E2 80 A9) are checked as their UTF-8 byte sequences.
+    for (size_t i = 0; i < trimmed.size(); ++i) {
+        unsigned char c = static_cast<unsigned char>(trimmed[i]);
+        if (c < 32) {
+            log(LogLevel::Warning, std::string("beacon: ") + field_name +
+                " contains a control character -- ignored.");
+            return false;
+        }
+        // Detect U+2028 (E2 80 A8) and U+2029 (E2 80 A9) as 3-byte UTF-8 sequences.
+        if (c == 0xE2 && i + 2 < trimmed.size() &&
+            static_cast<unsigned char>(trimmed[i + 1]) == 0x80 &&
+            (static_cast<unsigned char>(trimmed[i + 2]) == 0xA8 ||
+             static_cast<unsigned char>(trimmed[i + 2]) == 0xA9)) {
+            log(LogLevel::Warning, std::string("beacon: ") + field_name +
+                " contains a line-separator (U+2028/U+2029) -- ignored.");
+            return false;
+        }
+    }
+
+    out = std::move(trimmed);
+    return true;
 }
 
 // ---------- Breadcrumb helpers ----------

@@ -116,6 +116,45 @@ int main() {
 
 ---
 
+## Account & License Context
+
+For vendors with multi-customer or multi-tenant applications, Beacon supports two optional context fields that flow through every event, session, and exception report: `account_id` (the customer / organization the user belongs to) and `license_id` (the contract / subscription / entitlement under which usage is occurring).
+
+```cpp
+auto tracker = beacon::Tracker::instance();
+
+// After resolving the current user's account + license at sign-in / startup:
+tracker->setAccount("acct_42");           // pseudonymous, opaque ID — not an email
+tracker->setLicense("sub_9p2KqXyz");      // see "Recommended vs avoid" below
+
+tracker->identify("user-12345");
+tracker->track("auth", "user.signed-in"); // payload includes account_id + license_id
+```
+
+All subsequent events, the next `startSession()` payload, and any `trackException()` reports will include the two fields. Set once at sign-in; clear via `clearAccount()` / `clearLicense()` or wipe everything via `reset()` (used on logout). Validation rules: 1-256 chars after trim, no whitespace-only, no control characters. Invalid input is silently ignored and does NOT overwrite a previously valid value.
+
+### Recommended vs avoid (license IDs)
+
+**Prefer per-contract IDs.** A *single* license string shared across all of a customer's users — typically your subscription ID, site key, or bundle SKU — unlocks the most useful License Detail analytics in Beacon.
+
+```cpp
+// Recommended: per-contract license — same value for every user on this subscription
+tracker->setLicense(currentSubscription.id);          // e.g. "sub_9p2KqXyz"
+
+// Avoid: per-user license — each user gets a distinct license ID
+tracker->setLicense(currentUser.id);                  // duplicates the Actor view
+```
+
+With per-contract IDs:
+- The License Detail page surfaces meaningful per-license usage rollups.
+- The "Seen under multiple accounts" governance signal becomes actionable (a license used by users from two different `account_id`s is a useful integrity warning).
+
+With per-user IDs the License Detail view becomes a near-duplicate of the Actor Identities view and the multi-account-sharing warning is disabled — the SDK still works, you just lose the richer analytics tier.
+
+Note: the `/accounts` page in the Beacon portal is a Business+ feature, but ingestion is tier-blind — sending `account_id` / `license_id` on a Starter or Pro account is harmless and the values flow through immediately if you later upgrade.
+
+---
+
 ## API surface
 
 | Method | Purpose |
@@ -126,10 +165,12 @@ int main() {
 | `tracker->track(category, name, properties?)` | Track an event. Returns immediately; batched + flushed in background. |
 | `tracker->trackException(exception, severity)` | Report an exception with optional breadcrumb trail. Severity: `Fatal` or `NonFatal`. |
 | `tracker->startSession()` / `endSession()` | Open / close a session for grouped event analytics. |
+| `tracker->setAccount(account_id)` / `clearAccount()` | Attach / detach a customer account ID on every event, session, and exception. |
+| `tracker->setLicense(license_id)` / `clearLicense()` | Attach / detach a contract / license ID. **Prefer per-contract IDs.** |
 | `tracker->flush()` | Force-flush queued events. Blocks up to 30s. Use at shutdown. |
 | `tracker->exportEventManifest(path)` | Write declared events as a JSON manifest. Upload to the portal's Allowlists Import page. |
 | `tracker->optOut()` / `optIn()` | Persist consent. Opted-out tracker is a no-op. |
-| `tracker->reset()` | Clear actor + session + queue + breadcrumbs. Used on logout. |
+| `tracker->reset()` | Clear actor + session + account + license + queue + breadcrumbs. Used on logout. |
 
 ---
 

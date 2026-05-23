@@ -6,6 +6,19 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-05-23
+
+### Added
+
+- **`Tracker::setAccount(account_id)` and `Tracker::clearAccount()`** — attach a per-customer account identifier to subsequent events, sessions, and exceptions. Enables Beacon's account-grain analytics (Account Detail page, account-grain segments / funnels / retention) for vendors with multi-tenant or multi-customer apps.
+- **`Tracker::setLicense(license_id)` and `Tracker::clearLicense()`** — attach a per-contract license identifier. **Prefer per-contract IDs over per-user IDs** for richer License Detail analytics. See the `setLicense` doc comment for guidance.
+- `account_id` and `license_id` are added to event, session-start, and exception JSON payloads when set. When unset, the fields are **omitted entirely** from the JSON — the ingestion validator distinguishes "absent" from "present but invalid".
+- Validation matches the .NET and JS SDKs: 1-256 chars after trim, no whitespace-only, no control characters (including U+2028 / U+2029). Invalid input is silently ignored at `Warning` log level and does NOT overwrite a previously valid value. `setAccount` / `setLicense` are no-ops while opted out; `clearAccount` / `clearLicense` are always safe to call.
+
+### Changed
+
+- `Tracker::reset()` now clears the account and license context in addition to clearing actor and session state.
+
 ## [1.0.1] - 2026-05-08
 
 ### Removed

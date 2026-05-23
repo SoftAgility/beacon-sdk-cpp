@@ -28,6 +28,7 @@ set(TEST_SOURCES
     test_disk_queue.cpp
     test_event_definition_builder.cpp
     test_options_validation.cpp
+    test_account_license_context.cpp
 )
 
 add_executable(beacon_tests ${TEST_SOURCES})
