@@ -162,6 +162,7 @@ Note: the `/accounts` page in the Beacon portal is a Business+ feature, but inge
 | `Tracker::configure(fn)` | One-time singleton initialization. Throws `std::logic_error` if called twice. Silent no-op disable on bad config (missing api_key / api_base_url / app_name / app_version) — does NOT throw. |
 | `Tracker::instance()` | Returns the configured tracker, or `nullptr` if `configure()` was never called or disabled itself. |
 | `tracker->identify(actor_id)` | Set actor id for subsequent calls. Async-links the anonymous device id on first call. |
+| `tracker->actorId()` | Returns the current identified actor id (empty before `identify()`). |
 | `tracker->track(category, name, properties?)` | Track an event. Returns immediately; batched + flushed in background. |
 | `tracker->trackException(exception, severity)` | Report an exception with optional breadcrumb trail. Severity: `Fatal` or `NonFatal`. |
 | `tracker->startSession()` / `endSession()` | Open / close a session for grouped event analytics. |

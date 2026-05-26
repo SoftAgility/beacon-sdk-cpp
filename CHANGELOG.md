@@ -6,7 +6,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
-## [1.1.0] - 2026-05-23
+## [1.1.0] - 2026-05-26
 
 ### Added
 
@@ -14,10 +14,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - **`Tracker::setLicense(license_id)` and `Tracker::clearLicense()`** — attach a per-contract license identifier. **Prefer per-contract IDs over per-user IDs** for richer License Detail analytics. See the `setLicense` doc comment for guidance.
 - `account_id` and `license_id` are added to event, session-start, and exception JSON payloads when set. When unset, the fields are **omitted entirely** from the JSON — the ingestion validator distinguishes "absent" from "present but invalid".
 - Validation matches the .NET and JS SDKs: 1-256 chars after trim, no whitespace-only, no control characters (including U+2028 / U+2029). Invalid input is silently ignored at `Warning` log level and does NOT overwrite a previously valid value. `setAccount` / `setLicense` are no-ops while opted out; `clearAccount` / `clearLicense` are always safe to call.
+- **`Tracker::actorId()`** — read-only accessor for the currently identified actor ID. Returns an empty string before `identify()` has been called. Mirrors the .NET SDK's `ActorId` property and the JS SDK's `getActorId()`.
 
 ### Changed
 
 - `Tracker::reset()` now clears the account and license context in addition to clearing actor and session state.
+- **Renamed `opt_out()` → `optOut()` and `opt_in()` → `optIn()`** on `Tracker` for consistency with the other multi-word public methods (`startSession`, `endSession`, `setAccount`, `setLicense`, `trackException`, `exportEventManifest`). The README already documented the camelCase form, so this brings the code in line with the docs. **Breaking** — call sites must be updated; no compatibility alias is provided.
 
 ## [1.0.1] - 2026-05-08
 

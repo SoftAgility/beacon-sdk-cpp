@@ -166,7 +166,7 @@ Tracker::Tracker(Options opts)
     event_definitions_ = options_.events.build();
 
     // Initialize device ID and data directory BEFORE checking Enabled (FR-1128).
-    // These are needed by reset(), opt_out(), opt_in() which operate regardless of Enabled.
+    // These are needed by reset(), optOut(), optIn() which operate regardless of Enabled.
     try {
         device_id_ = internal::get_or_create_device_id(options_.app_name);
     } catch (...) {
@@ -687,7 +687,7 @@ void Tracker::clearLicense() {
 
 // ---------- Consent API (FR-1129, FR-1130) ----------
 
-void Tracker::opt_out() {
+void Tracker::optOut() {
     try {
         // Idempotent — if already opted out, do nothing (ED-735)
         bool expected = false;
@@ -724,11 +724,11 @@ void Tracker::opt_out() {
             }
         }
     } catch (...) {
-        log(LogLevel::Warning, "beacon: opt_out() internal error.");
+        log(LogLevel::Warning, "beacon: optOut() internal error.");
     }
 }
 
-void Tracker::opt_in() {
+void Tracker::optIn() {
     try {
         // Idempotent — if not opted out, do nothing (ED-732)
         bool expected = true;
@@ -758,7 +758,7 @@ void Tracker::opt_in() {
         // Signal the flush thread condition variable to wake and check for work
         flush_cv_.notify_one();
     } catch (...) {
-        log(LogLevel::Warning, "beacon: opt_in() internal error.");
+        log(LogLevel::Warning, "beacon: optIn() internal error.");
     }
 }
 
@@ -1062,6 +1062,11 @@ const Options& Tracker::options() const {
 std::string Tracker::session_id() const {
     std::lock_guard<std::mutex> lock(session_mutex_);
     return session_id_;
+}
+
+std::string Tracker::actorId() const {
+    std::lock_guard<std::mutex> lock(session_mutex_);
+    return actor_id_;
 }
 
 // ---------- Private helpers ----------

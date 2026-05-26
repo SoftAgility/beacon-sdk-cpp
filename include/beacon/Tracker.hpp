@@ -122,11 +122,11 @@ public:
 
     // Stop all tracking immediately, persist opt-out to disk, clear memory queue.
     // Idempotent. Never throws.
-    void opt_out();
+    void optOut();
 
-    // Resume tracking after a prior opt_out(). Deletes opt-out file from disk.
+    // Resume tracking after a prior optOut(). Deletes opt-out file from disk.
     // Idempotent. Never throws.
-    void opt_in();
+    void optIn();
 
     // Clear actor identity, session state, queue, and breadcrumbs.
     // Generates a new anonymous device ID. Ends active session (fire-and-forget).
@@ -153,6 +153,10 @@ public:
 
     // Access the session ID (for testing).
     std::string session_id() const;
+
+    // Returns the current identified actor ID, or empty string if identify()
+    // has not been called. Mirrors the .NET ActorId property and JS getActorId().
+    std::string actorId() const;
 
 private:
     // Private constructor - use configure() factory.

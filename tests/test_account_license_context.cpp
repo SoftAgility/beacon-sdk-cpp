@@ -370,11 +370,11 @@ TEST_F(AccountLicenseContextTest, TrackException_AfterClearAccount_OmitsAccountI
 // ── Opt-out gating ────────────────────────────────────────────────────────
 
 TEST_F(AccountLicenseContextTest, SetAccount_WhileOptedOut_IsNoOp) {
-    tracker_->opt_out();
+    tracker_->optOut();
     tracker_->setAccount("acc_should_not_apply");
 
     // Bring back into a state where we can enqueue and inspect a payload.
-    tracker_->opt_in();
+    tracker_->optIn();
     tracker_->track("cat", "name");
     auto j = LastEventJson();
 
@@ -383,10 +383,10 @@ TEST_F(AccountLicenseContextTest, SetAccount_WhileOptedOut_IsNoOp) {
 }
 
 TEST_F(AccountLicenseContextTest, SetLicense_WhileOptedOut_IsNoOp) {
-    tracker_->opt_out();
+    tracker_->optOut();
     tracker_->setLicense("lic_should_not_apply");
 
-    tracker_->opt_in();
+    tracker_->optIn();
     tracker_->track("cat", "name");
     auto j = LastEventJson();
 
@@ -397,10 +397,10 @@ TEST_F(AccountLicenseContextTest, SetLicense_WhileOptedOut_IsNoOp) {
 TEST_F(AccountLicenseContextTest, ClearAccount_WhileOptedOut_StillWorks) {
     // Set account, then opt out, then clear — clear must always be safe.
     tracker_->setAccount("acc_will_be_cleared");
-    tracker_->opt_out();
+    tracker_->optOut();
     tracker_->clearAccount();  // should not throw, should clear the value
 
-    tracker_->opt_in();
+    tracker_->optIn();
     tracker_->track("cat", "name");
     auto j = LastEventJson();
 
@@ -409,10 +409,10 @@ TEST_F(AccountLicenseContextTest, ClearAccount_WhileOptedOut_StillWorks) {
 
 TEST_F(AccountLicenseContextTest, ClearLicense_WhileOptedOut_StillWorks) {
     tracker_->setLicense("lic_will_be_cleared");
-    tracker_->opt_out();
+    tracker_->optOut();
     tracker_->clearLicense();
 
-    tracker_->opt_in();
+    tracker_->optIn();
     tracker_->track("cat", "name");
     auto j = LastEventJson();
 

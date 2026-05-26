@@ -277,3 +277,37 @@ TEST_F(IdentifyTrackTest, IdentifySameUserSkipsPost) {
     auto j = nlohmann::json::parse(json_str);
     EXPECT_EQ(j["actor_id"], "user-A");
 }
+
+// ── actorId() accessor ─────────────────────────────────────────────────────
+// Parity with the .NET SDK's ActorId property and JS SDK's getActorId().
+
+TEST_F(IdentifyTrackTest, ActorIdEmptyBeforeIdentify) {
+    EXPECT_TRUE(tracker_->actorId().empty());
+}
+
+TEST_F(IdentifyTrackTest, ActorIdReturnsIdentifiedValue) {
+    tracker_->identify("user-A");
+    EXPECT_EQ(tracker_->actorId(), "user-A");
+}
+
+TEST_F(IdentifyTrackTest, ActorIdReflectsReIdentification) {
+    tracker_->identify("user-A");
+    tracker_->identify("user-B");
+    EXPECT_EQ(tracker_->actorId(), "user-B");
+}
+
+TEST_F(IdentifyTrackTest, ActorIdClearedByReset) {
+    tracker_->identify("user-A");
+    ASSERT_EQ(tracker_->actorId(), "user-A");
+    tracker_->reset();
+    EXPECT_TRUE(tracker_->actorId().empty());
+}
+
+TEST_F(IdentifyTrackTest, ActorIdUnchangedByOptOutOptIn) {
+    tracker_->identify("user-A");
+    tracker_->optOut();
+    EXPECT_EQ(tracker_->actorId(), "user-A")
+        << "optOut() must not mutate actor identity; only reset() clears it.";
+    tracker_->optIn();
+    EXPECT_EQ(tracker_->actorId(), "user-A");
+}
