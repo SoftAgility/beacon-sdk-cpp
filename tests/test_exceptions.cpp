@@ -20,7 +20,7 @@ protected:
         tracker_ = beacon::Tracker::configure([](beacon::Options& o) {
             o.api_key = "test-key";
             o.api_base_url = "http://localhost:9999";
-            o.app_name = "TestApp";
+            o.product = "TestApp";
             o.app_version = "1.0.0";
             o.flush_interval_seconds = 3600;
             o.max_batch_size = 1000;
@@ -44,7 +44,7 @@ protected:
         tracker_ = beacon::Tracker::configure([](beacon::Options& o) {
             o.api_key = "test-key";
             o.api_base_url = "http://localhost:9999";
-            o.app_name = "TestApp";
+            o.product = "TestApp";
             o.app_version = "1.0.0";
             o.flush_interval_seconds = 3600;
             o.max_batch_size = 1000;
@@ -68,7 +68,7 @@ protected:
         tracker_ = beacon::Tracker::configure([](beacon::Options& o) {
             o.api_key = "test-key";
             o.api_base_url = "http://localhost:9999";
-            o.app_name = "TestApp";
+            o.product = "TestApp";
             o.app_version = "1.0.0";
             o.flush_interval_seconds = 3600;
             o.max_batch_size = 1000;
@@ -161,9 +161,9 @@ TEST_F(ExceptionsTest, TrackExceptionWithIdentifiedActorProducesValidPayload) {
     std::string exception_id = j["exception_id"];
     EXPECT_EQ(exception_id.size(), 36u);
 
-    // source_app
-    ASSERT_TRUE(j.contains("source_app"));
-    EXPECT_EQ(j["source_app"], "TestApp");
+    // product
+    ASSERT_TRUE(j.contains("product"));
+    EXPECT_EQ(j["product"], "TestApp");
 
     // source_version
     ASSERT_TRUE(j.contains("source_version"));
@@ -188,7 +188,7 @@ TEST_F(ExceptionsTest, TrackExceptionWithExplicitActorProducesValidPayload) {
     ASSERT_TRUE(j.contains("occurred_at"));
     ASSERT_TRUE(j.contains("exception_id"));
     EXPECT_EQ(j["exception_id"].get<std::string>().size(), 36u);
-    EXPECT_EQ(j["source_app"], "TestApp");
+    EXPECT_EQ(j["product"], "TestApp");
     EXPECT_EQ(j["source_version"], "1.0.0");
 }
 

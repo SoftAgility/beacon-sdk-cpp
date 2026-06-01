@@ -35,7 +35,7 @@ TEST_F(ConfigureTest, DoubleConfigureThrowsLogicError) {
     beacon::Tracker::configure([](beacon::Options& o) {
         o.api_key = "test-key";
         o.api_base_url = "http://localhost:9999";
-        o.app_name = "TestApp";
+        o.product = "TestApp";
         o.app_version = "1.0";
     });
 
@@ -44,7 +44,7 @@ TEST_F(ConfigureTest, DoubleConfigureThrowsLogicError) {
             beacon::Tracker::configure([](beacon::Options& o) {
                 o.api_key = "another-key";
                 o.api_base_url = "http://localhost:9999";
-                o.app_name = "TestApp2";
+                o.product = "TestApp2";
                 o.app_version = "1.0";
             });
         } catch (const std::logic_error& e) {
@@ -59,7 +59,7 @@ TEST_F(ConfigureTest, DoubleConfigureWithOptionsStructThrows) {
     beacon::Options opts;
     opts.api_key = "k";
     opts.api_base_url = "http://localhost:9999";
-    opts.app_name = "App";
+    opts.product = "App";
     opts.app_version = "1.0";
     beacon::Tracker::configure(opts);
 
@@ -73,7 +73,7 @@ TEST_F(ConfigureTest, EmptyApiKeyDisablesSdkAndLogsWarning) {
     auto tracker = beacon::Tracker::configure([&logger](beacon::Options& o) {
         o.api_key = "";
         o.api_base_url = "http://localhost:9999";
-        o.app_name = "TestApp";
+        o.product = "TestApp";
         o.app_version = "1.0";
         o.logger = logger;
     });
@@ -98,7 +98,7 @@ TEST_F(ConfigureTest, InvalidUrlDisablesSdk) {
     auto tracker = beacon::Tracker::configure([](beacon::Options& o) {
         o.api_key = "k";
         o.api_base_url = "not-a-url";
-        o.app_name = "app";
+        o.product = "app";
         o.app_version = "1.0";
     });
 
@@ -113,7 +113,7 @@ TEST_F(ConfigureTest, InvalidUrlLogsWarning) {
     auto tracker = beacon::Tracker::configure([&logger](beacon::Options& o) {
         o.api_key = "k";
         o.api_base_url = "not-a-url";
-        o.app_name = "app";
+        o.product = "app";
         o.app_version = "1.0";
         o.logger = logger;
     });
@@ -134,7 +134,7 @@ TEST_F(ConfigureTest, ValidConfigHasNotConnectedStatus) {
     auto tracker = beacon::Tracker::configure([](beacon::Options& o) {
         o.api_key = "test-key";
         o.api_base_url = "http://localhost:9999";
-        o.app_name = "TestApp";
+        o.product = "TestApp";
         o.app_version = "1.0";
     });
 
@@ -147,7 +147,7 @@ TEST_F(ConfigureTest, OptionsClampedToValidRanges) {
     auto tracker = beacon::Tracker::configure([](beacon::Options& o) {
         o.api_key = "test-key";
         o.api_base_url = "http://localhost:9999";
-        o.app_name = "TestApp";
+        o.product = "TestApp";
         o.app_version = "1.0";
         o.flush_interval_seconds = -5;
         o.max_batch_size = 5000;
@@ -172,7 +172,7 @@ TEST_F(ConfigureTest, InstanceReturnsSingletonAfterConfigure) {
     auto tracker = beacon::Tracker::configure([](beacon::Options& o) {
         o.api_key = "test-key";
         o.api_base_url = "http://localhost:9999";
-        o.app_name = "TestApp";
+        o.product = "TestApp";
         o.app_version = "1.0";
     });
 
@@ -186,7 +186,7 @@ TEST_F(ConfigureTest, ConfigureWithOptionsStruct) {
     beacon::Options opts;
     opts.api_key = "test-key";
     opts.api_base_url = "http://localhost:9999";
-    opts.app_name = "TestApp";
+    opts.product = "TestApp";
     opts.app_version = "1.0";
 
     auto tracker = beacon::Tracker::configure(std::move(opts));
@@ -199,7 +199,7 @@ TEST_F(ConfigureTest, DoubleConfigureDoesNotModifySingleton) {
     auto tracker = beacon::Tracker::configure([](beacon::Options& o) {
         o.api_key = "original-key";
         o.api_base_url = "http://localhost:9999";
-        o.app_name = "OriginalApp";
+        o.product = "OriginalApp";
         o.app_version = "1.0";
     });
 
@@ -207,7 +207,7 @@ TEST_F(ConfigureTest, DoubleConfigureDoesNotModifySingleton) {
         beacon::Tracker::configure([](beacon::Options& o) {
             o.api_key = "new-key";
             o.api_base_url = "http://localhost:9999";
-            o.app_name = "NewApp";
+            o.product = "NewApp";
             o.app_version = "2.0";
         });
     } catch (const std::logic_error&) {
@@ -217,5 +217,5 @@ TEST_F(ConfigureTest, DoubleConfigureDoesNotModifySingleton) {
     // Original singleton should be unchanged
     auto instance = beacon::Tracker::instance();
     ASSERT_NE(instance, nullptr);
-    EXPECT_EQ(instance->options().app_name, "OriginalApp");
+    EXPECT_EQ(instance->options().product, "OriginalApp");
 }

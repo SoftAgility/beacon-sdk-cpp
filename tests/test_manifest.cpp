@@ -24,7 +24,7 @@ TEST_F(ManifestTest, ExportManifestWritesValidJson) {
     auto tracker = beacon::Tracker::configure([](beacon::Options& o) {
         o.api_key = "test-key";
         o.api_base_url = "http://localhost:9999";
-        o.app_name = "TestApp";
+        o.product = "TestApp";
         o.app_version = "2.0";
         o.events
             .define("app", "launched")
@@ -45,7 +45,7 @@ TEST_F(ManifestTest, ExportManifestWritesValidJson) {
 
     auto j = nlohmann::json::parse(ifs);
     EXPECT_EQ(j["schema_version"], "1");
-    EXPECT_EQ(j["source_app"], "TestApp");
+    EXPECT_EQ(j["product"], "TestApp");
     EXPECT_EQ(j["source_version"], "2.0");
     EXPECT_TRUE(j.contains("generated_at"));
     ASSERT_TRUE(j.contains("entries"));
@@ -66,7 +66,7 @@ TEST_F(ManifestTest, ExportManifestWritesValidJson) {
 TEST_F(ManifestTest, ExportManifestWorksWhenDisabled) {
     auto tracker = beacon::Tracker::configure([](beacon::Options& o) {
         o.enabled = false;
-        o.app_name = "TestApp";
+        o.product = "TestApp";
         o.app_version = "1.0";
         o.events.define("cat", "name");
     });
@@ -90,7 +90,7 @@ TEST_F(ManifestTest, ExportManifestInvalidPathThrows) {
     auto tracker = beacon::Tracker::configure([](beacon::Options& o) {
         o.api_key = "test-key";
         o.api_base_url = "http://localhost:9999";
-        o.app_name = "TestApp";
+        o.product = "TestApp";
         o.app_version = "1.0";
     });
 

@@ -11,7 +11,7 @@ namespace beacon {
 struct Options {
     std::string api_key;
     std::string api_base_url;
-    std::string app_name;
+    std::string product;
     std::string app_version;
     bool enabled = true;
     int flush_interval_seconds = 60;

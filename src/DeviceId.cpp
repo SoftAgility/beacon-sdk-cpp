@@ -49,10 +49,10 @@ void create_directories(const std::string& path) {
     CreateDirectoryA(path.c_str(), nullptr);
 }
 
-std::string get_device_id_path(const std::string& safe_app_name) {
+std::string get_device_id_path(const std::string& safe_product) {
     char appdata[MAX_PATH] = {};
     if (SUCCEEDED(SHGetFolderPathA(nullptr, CSIDL_APPDATA, nullptr, 0, appdata))) {
-        std::string dir = std::string(appdata) + "\\SoftAgility\\Beacon\\" + safe_app_name;
+        std::string dir = std::string(appdata) + "\\SoftAgility\\Beacon\\" + safe_product;
         return dir + "\\device_id.txt";
     }
     return {};
@@ -71,14 +71,14 @@ void create_directories(const std::string& path) {
     mkdir(path.c_str(), 0755);
 }
 
-std::string get_device_id_path(const std::string& safe_app_name) {
+std::string get_device_id_path(const std::string& safe_product) {
     const char* home = std::getenv("HOME");
     if (!home) {
         struct passwd* pw = getpwuid(getuid());
         if (pw) home = pw->pw_dir;
     }
     if (home) {
-        std::string dir = std::string(home) + "/Library/Application Support/SoftAgility/Beacon/" + safe_app_name;
+        std::string dir = std::string(home) + "/Library/Application Support/SoftAgility/Beacon/" + safe_product;
         return dir + "/device_id.txt";
     }
     return {};
@@ -97,7 +97,7 @@ void create_directories(const std::string& path) {
     mkdir(path.c_str(), 0755);
 }
 
-std::string get_device_id_path(const std::string& safe_app_name) {
+std::string get_device_id_path(const std::string& safe_product) {
     const char* home = std::getenv("HOME");
     if (!home) {
         struct passwd* pw = getpwuid(getuid());
@@ -105,12 +105,12 @@ std::string get_device_id_path(const std::string& safe_app_name) {
     }
 
     if (home) {
-        std::string dir = std::string(home) + "/.local/share/SoftAgility/Beacon/" + safe_app_name;
+        std::string dir = std::string(home) + "/.local/share/SoftAgility/Beacon/" + safe_product;
         return dir + "/device_id.txt";
     }
 
     // Fallback
-    std::string dir = "/var/lib/SoftAgility/Beacon/" + safe_app_name;
+    std::string dir = "/var/lib/SoftAgility/Beacon/" + safe_product;
     return dir + "/device_id.txt";
 }
 
@@ -118,8 +118,8 @@ std::string get_device_id_path(const std::string& safe_app_name) {
 
 } // anonymous namespace
 
-std::string get_data_directory(const std::string& app_name) {
-    std::string safe_name = sanitize_path_component(app_name);
+std::string get_data_directory(const std::string& product) {
+    std::string safe_name = sanitize_path_component(product);
     std::string path = get_device_id_path(safe_name);
     if (path.empty()) return {};
     // Return directory portion (strip filename)
@@ -130,8 +130,8 @@ std::string get_data_directory(const std::string& app_name) {
     return {};
 }
 
-void write_device_id(const std::string& app_name, const std::string& uuid) {
-    std::string safe_name = sanitize_path_component(app_name);
+void write_device_id(const std::string& product, const std::string& uuid) {
+    std::string safe_name = sanitize_path_component(product);
     std::string path = get_device_id_path(safe_name);
     if (path.empty()) {
         throw std::runtime_error("beacon: cannot determine device ID path.");
@@ -152,8 +152,8 @@ void write_device_id(const std::string& app_name, const std::string& uuid) {
     }
 }
 
-std::string get_or_create_device_id(const std::string& app_name) {
-    std::string safe_name = sanitize_path_component(app_name);
+std::string get_or_create_device_id(const std::string& product) {
+    std::string safe_name = sanitize_path_component(product);
     std::string path = get_device_id_path(safe_name);
 
     if (path.empty()) {

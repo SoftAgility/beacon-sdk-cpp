@@ -17,7 +17,7 @@ TEST(DeviceIdTest, ReturnsValidUuid) {
     EXPECT_EQ(id[14], '7'); // Version nibble
 }
 
-// ED-508: Path-unsafe characters in app_name are sanitized
+// ED-508: Path-unsafe characters in product are sanitized
 TEST(DeviceIdTest, SanitizesPathUnsafeChars) {
     std::string sanitized = beacon::internal::sanitize_path_component("My:App/v2\\test");
     EXPECT_EQ(sanitized, "My_App_v2_test");

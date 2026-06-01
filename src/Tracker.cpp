@@ -113,8 +113,8 @@ std::shared_ptr<Tracker> Tracker::configure(Options options) {
          options.api_base_url.substr(0, 8) != "https://")) {
         warn_and_disable("api_base_url");
     }
-    if (options.app_name.empty()) {
-        warn_and_disable("app_name");
+    if (options.product.empty()) {
+        warn_and_disable("product");
     }
     if (options.app_version.empty()) {
         warn_and_disable("app_version");
@@ -125,9 +125,9 @@ std::shared_ptr<Tracker> Tracker::configure(Options options) {
         options.api_base_url.pop_back();
     }
 
-    // Truncate app_name and app_version
-    if (options.app_name.size() > 128) {
-        options.app_name.resize(128);
+    // Truncate product and app_version
+    if (options.product.size() > 128) {
+        options.product.resize(128);
     }
     if (options.app_version.size() > 256) {
         options.app_version.resize(256);
@@ -168,14 +168,14 @@ Tracker::Tracker(Options opts)
     // Initialize device ID and data directory BEFORE checking Enabled (FR-1128).
     // These are needed by reset(), optOut(), optIn() which operate regardless of Enabled.
     try {
-        device_id_ = internal::get_or_create_device_id(options_.app_name);
+        device_id_ = internal::get_or_create_device_id(options_.product);
     } catch (...) {
         device_id_ = internal::new_uuid_v7();
         log(LogLevel::Warning, "beacon: device ID creation failed, using transient ID.");
     }
 
     try {
-        data_directory_ = internal::get_data_directory(options_.app_name);
+        data_directory_ = internal::get_data_directory(options_.product);
     } catch (...) {
         log(LogLevel::Warning, "beacon: failed to resolve data directory.");
     }
@@ -299,17 +299,17 @@ void Tracker::identify(std::string actor_id) {
     if (previous_actor_id != actor_id && !device_id_copy.empty()) {
         std::string api_key = options_.api_key;
         std::string base_url = options_.api_base_url;
-        std::string app_name = options_.app_name;
+        std::string product = options_.product;
         std::string app_version = options_.app_version;
         auto logger = options_.logger;
 
-        std::thread([device_id_copy, actor_id, api_key, base_url, app_name, app_version, logger]() {
+        std::thread([device_id_copy, actor_id, api_key, base_url, product, app_version, logger]() {
             try {
                 nlohmann::json body;
                 body["anonymous_actor_id"] = device_id_copy;
                 body["identified_actor_id"] = actor_id;
                 body["identified_at"] = utc_iso8601_now();
-                body["source_app"] = app_name;
+                body["product"] = product;
                 if (!app_version.empty()) {
                     body["source_version"] = app_version;
                 }
@@ -407,7 +407,7 @@ void Tracker::track_impl(std::string category, std::string name, std::string act
         j["name"] = name;
         j["timestamp"] = timestamp;
         j["actor_id"] = actor_id;
-        j["source_app"] = options_.app_name;
+        j["product"] = options_.product;
         j["source_version"] = options_.app_version;
 
         // Session ID + account/license context
@@ -567,20 +567,20 @@ void Tracker::start_session_impl(std::string actor_id) {
         }
 
         // Start new session in background (fire-and-forget)
-        std::string app_name = options_.app_name;
+        std::string product = options_.product;
         std::string app_version = options_.app_version;
         std::string api_key = options_.api_key;
         std::string base_url = options_.api_base_url;
         auto logger_start = options_.logger;
 
-        std::thread([new_session_id, actor_id, app_name, app_version,
+        std::thread([new_session_id, actor_id, product, app_version,
                      started_at, api_key, base_url, logger_start,
                      account_snapshot, license_snapshot]() {
             try {
                 nlohmann::json body;
                 body["session_id"] = new_session_id;
                 body["actor_id"] = actor_id;
-                body["source_app"] = app_name;
+                body["product"] = product;
                 body["source_version"] = app_version;
                 body["started_at"] = started_at;
                 if (!account_snapshot.empty()) body["account_id"] = account_snapshot;
@@ -817,7 +817,7 @@ void Tracker::reset() {
         std::string new_device_id = internal::new_uuid_v7();
 
         try {
-            internal::write_device_id(options_.app_name, new_device_id);
+            internal::write_device_id(options_.product, new_device_id);
         } catch (...) {
             log(LogLevel::Warning,
                 "beacon: failed to write new device ID to disk -- anonymous ID is ephemeral for this session.");
@@ -910,7 +910,7 @@ void Tracker::track_exception_impl(const std::exception& ex, std::string actor_i
         body["severity"] = (severity == ExceptionSeverity::Fatal) ? "fatal" : "non_fatal";
         body["occurred_at"] = occurred_at;
         body["actor_id"] = actor_id;
-        body["source_app"] = options_.app_name;
+        body["product"] = options_.product;
         body["source_version"] = options_.app_version;
 
         if (!message.empty()) {
@@ -1007,7 +1007,7 @@ void Tracker::exportEventManifest(std::string file_path) {
     nlohmann::json manifest;
     manifest["schema_version"] = "1";
     manifest["generated_at"] = utc_iso8601_now();
-    manifest["source_app"] = options_.app_name;
+    manifest["product"] = options_.product;
     manifest["source_version"] = options_.app_version;
 
     nlohmann::json entries = nlohmann::json::array();
@@ -1166,7 +1166,7 @@ std::vector<internal::BreadcrumbEntry> Tracker::snapshot_breadcrumbs() const {
 void Tracker::init_disk_queue() {
     try {
         // Determine path for disk queue
-        std::string safe_name = internal::sanitize_path_component(options_.app_name);
+        std::string safe_name = internal::sanitize_path_component(options_.product);
 
 #if defined(_WIN32)
         char appdata[260] = {};

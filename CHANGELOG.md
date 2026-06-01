@@ -6,6 +6,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [2.0.0] - 2026-05-31
+
+### Changed
+
+- **BREAKING — renamed the app-identity config field `Options::app_name` → `Options::product`.** Call sites must update `opts.app_name = ...` to `opts.product = ...`. No compatibility alias is provided. The value flowing is unchanged — still the registered product slug from the portal.
+- **BREAKING — renamed the wire field `source_app` → `product`** on every JSON payload: event, session-start, exception, actor-identify, and the exported event manifest. The backend now reads the `product` wire key. `app_version` / `source_version` are unchanged.
+
 ## [1.1.0] - 2026-05-26
 
 ### Added

@@ -27,8 +27,8 @@ protected:
 };
 
 // Helper to determine the expected disk queue path for a given app name
-static std::string expected_db_path(const std::string& app_name) {
-    std::string safe_name = beacon::internal::sanitize_path_component(app_name);
+static std::string expected_db_path(const std::string& product) {
+    std::string safe_name = beacon::internal::sanitize_path_component(product);
     std::string path;
 #if defined(_WIN32)
     const char* appdata = std::getenv("APPDATA");
@@ -51,8 +51,8 @@ static std::string expected_db_path(const std::string& app_name) {
 
 // AC-937: Destructor persists queued events to disk
 TEST_F(LifecycleTest, DestructorPersistsQueuedEvents) {
-    std::string app_name = "LifecycleTestPersist";
-    std::string db_path = expected_db_path(app_name);
+    std::string product = "LifecycleTestPersist";
+    std::string db_path = expected_db_path(product);
 
     if (db_path.empty()) {
         GTEST_SKIP() << "Could not determine disk queue path for this platform";
@@ -64,10 +64,10 @@ TEST_F(LifecycleTest, DestructorPersistsQueuedEvents) {
     std::remove((db_path + "-shm").c_str());
 
     {
-        auto tracker = beacon::Tracker::configure([&app_name](beacon::Options& o) {
+        auto tracker = beacon::Tracker::configure([&product](beacon::Options& o) {
             o.api_key = "test-key";
             o.api_base_url = "http://localhost:9999";
-            o.app_name = app_name;
+            o.product = product;
             o.app_version = "1.0.0";
             o.flush_interval_seconds = 3600; // Prevent auto-flush
             o.max_batch_size = 1000;
@@ -105,7 +105,7 @@ TEST_F(LifecycleTest, FullLifecycleNoCrash) {
     auto tracker = beacon::Tracker::configure([](beacon::Options& o) {
         o.api_key = "test-key";
         o.api_base_url = "http://localhost:9999";
-        o.app_name = "LifecycleTest";
+        o.product = "LifecycleTest";
         o.app_version = "1.0";
         o.flush_interval_seconds = 3600;
     });
@@ -133,7 +133,7 @@ TEST_F(LifecycleTest, FullLifecycleNoCrash) {
 TEST_F(LifecycleTest, DisabledSdkMethodsAreNoops) {
     auto tracker = beacon::Tracker::configure([](beacon::Options& o) {
         o.enabled = false;
-        o.app_name = "TestApp";
+        o.product = "TestApp";
         o.app_version = "1.0";
     });
 
@@ -156,7 +156,7 @@ TEST_F(LifecycleTest, DisabledSdkMethodsAreNoops) {
 TEST_F(LifecycleTest, DisabledSdkNoBackgroundThread) {
     auto tracker = beacon::Tracker::configure([](beacon::Options& o) {
         o.enabled = false;
-        o.app_name = "TestApp";
+        o.product = "TestApp";
         o.app_version = "1.0";
     });
 
@@ -176,7 +176,7 @@ TEST_F(LifecycleTest, DestructorNoEventsNoCrash) {
     auto tracker = beacon::Tracker::configure([](beacon::Options& o) {
         o.api_key = "test-key";
         o.api_base_url = "http://localhost:9999";
-        o.app_name = "EmptyDestroyApp";
+        o.product = "EmptyDestroyApp";
         o.app_version = "1.0";
         o.flush_interval_seconds = 3600;
     });

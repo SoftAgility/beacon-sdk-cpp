@@ -82,7 +82,7 @@ int main() {
     beacon::Tracker::configure([](beacon::Options& opts) {
         opts.api_key      = "pk_your_api_key";
         opts.api_base_url = "https://api.beacon.softagility.com";
-        opts.app_name     = "my-app";        // becomes source_app on every event
+        opts.product      = "my-app";        // the registered product slug, sent as product on every event
         opts.app_version  = "1.4.2";         // becomes source_version on every event
 
         // Optional but recommended — declare the events your app emits.
@@ -159,7 +159,7 @@ Note: the `/accounts` page in the Beacon portal is a Business+ feature, but inge
 
 | Method | Purpose |
 |---|---|
-| `Tracker::configure(fn)` | One-time singleton initialization. Throws `std::logic_error` if called twice. Silent no-op disable on bad config (missing api_key / api_base_url / app_name / app_version) — does NOT throw. |
+| `Tracker::configure(fn)` | One-time singleton initialization. Throws `std::logic_error` if called twice. Silent no-op disable on bad config (missing api_key / api_base_url / product / app_version) — does NOT throw. |
 | `Tracker::instance()` | Returns the configured tracker, or `nullptr` if `configure()` was never called or disabled itself. |
 | `tracker->identify(actor_id)` | Set actor id for subsequent calls. Async-links the anonymous device id on first call. |
 | `tracker->actorId()` | Returns the current identified actor id (empty before `identify()`). |
@@ -181,7 +181,7 @@ Note: the `/accounts` page in the Beacon portal is a Business+ feature, but inge
 |---|---|---|---|
 | `api_key` | required | — | API key from the Beacon portal. Sent as `Authorization: Bearer`. |
 | `api_base_url` | required | URL | `https://api.beacon.softagility.com` (or self-hosted). |
-| `app_name` | required | ≤128 chars | `source_app` on every event. Must match a registered product in the portal. |
+| `product` | required | ≤128 chars | The registered product slug, sent as `product` on every event. Must match a registered product in the portal. |
 | `app_version` | required | ≤256 chars | `source_version`. Auto-registers on first event. |
 | `flush_interval_seconds` | `60` | 1-3600 | Background flush cadence. |
 | `max_batch_size` | `25` | 1-1000 | Events per HTTP batch. |

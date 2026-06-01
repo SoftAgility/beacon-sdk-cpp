@@ -15,7 +15,7 @@ protected:
         tracker_ = beacon::Tracker::configure([](beacon::Options& o) {
             o.api_key = "test-key";
             o.api_base_url = "http://localhost:9999";
-            o.app_name = "TestApp";
+            o.product = "TestApp";
             o.app_version = "1.0.0";
             o.flush_interval_seconds = 3600; // Prevent auto-flush
             o.max_batch_size = 1000;         // Prevent batch-triggered flush
@@ -82,7 +82,7 @@ TEST_F(IdentifyTrackTest, IdentifyThenTrackEnqueuesEvent) {
     EXPECT_EQ(j["category"], "cat");
     EXPECT_EQ(j["name"], "name");
     EXPECT_EQ(j["actor_id"], "user-1");
-    EXPECT_EQ(j["source_app"], "TestApp");
+    EXPECT_EQ(j["product"], "TestApp");
     EXPECT_EQ(j["source_version"], "1.0.0");
     EXPECT_TRUE(j.contains("event_id"));
     EXPECT_TRUE(j.contains("timestamp"));

@@ -22,7 +22,7 @@ protected:
         tracker_ = beacon::Tracker::configure([](beacon::Options& o) {
             o.api_key = "test-key";
             o.api_base_url = "http://localhost:9999";
-            o.app_name = "TestApp";
+            o.product = "TestApp";
             o.app_version = "1.0.0";
             o.flush_interval_seconds = 3600; // Prevent auto-flush
             o.max_batch_size = 1000;         // Prevent batch-triggered flush

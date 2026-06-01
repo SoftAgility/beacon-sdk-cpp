@@ -15,7 +15,7 @@ TEST_F(ThreadSafetyTest, ConcurrentTrackCalls) {
     auto tracker = beacon::Tracker::configure([](beacon::Options& o) {
         o.api_key = "test-key";
         o.api_base_url = "http://localhost:9999";
-        o.app_name = "ThreadTestApp";
+        o.product = "ThreadTestApp";
         o.app_version = "1.0.0";
         o.flush_interval_seconds = 3600; // Prevent auto-flush
         o.max_batch_size = 100000;       // Prevent batch-triggered flush
@@ -51,7 +51,7 @@ TEST_F(ThreadSafetyTest, ConcurrentIdentifyAndTrack) {
     auto tracker = beacon::Tracker::configure([](beacon::Options& o) {
         o.api_key = "test-key";
         o.api_base_url = "http://localhost:9999";
-        o.app_name = "ThreadTestApp2";
+        o.product = "ThreadTestApp2";
         o.app_version = "1.0.0";
         o.flush_interval_seconds = 3600;
         o.max_batch_size = 100000;

@@ -16,7 +16,7 @@ TEST_F(FlushTest, FlushOnDisabledSdkReturnsTrue) {
     auto tracker = beacon::Tracker::configure([](beacon::Options& o) {
         o.api_key = "";
         o.api_base_url = "http://localhost:9999";
-        o.app_name = "TestApp";
+        o.product = "TestApp";
         o.app_version = "1.0";
     });
 
@@ -29,7 +29,7 @@ TEST_F(FlushTest, EmptyFlushNoEvents) {
     auto tracker = beacon::Tracker::configure([](beacon::Options& o) {
         o.api_key = "test-key";
         o.api_base_url = "http://localhost:9999";
-        o.app_name = "TestApp";
+        o.product = "TestApp";
         o.app_version = "1.0.0";
         o.flush_interval_seconds = 3600;
     });
@@ -47,7 +47,7 @@ TEST_F(FlushTest, InitialFlushStatusNotConnected) {
     auto tracker = beacon::Tracker::configure([](beacon::Options& o) {
         o.api_key = "test-key";
         o.api_base_url = "http://localhost:9999";
-        o.app_name = "TestApp";
+        o.product = "TestApp";
         o.app_version = "1.0";
     });
 
@@ -58,7 +58,7 @@ TEST_F(FlushTest, InitialFlushStatusNotConnected) {
 TEST_F(FlushTest, DisabledTrackerHasDisabledStatus) {
     auto tracker = beacon::Tracker::configure([](beacon::Options& o) {
         o.enabled = false;
-        o.app_name = "TestApp";
+        o.product = "TestApp";
         o.app_version = "1.0";
     });
 
@@ -69,7 +69,7 @@ TEST_F(FlushTest, DisabledTrackerHasDisabledStatus) {
 TEST_F(FlushTest, DisabledSdkFlushReturnsTrue) {
     auto tracker = beacon::Tracker::configure([](beacon::Options& o) {
         o.enabled = false;
-        o.app_name = "TestApp";
+        o.product = "TestApp";
         o.app_version = "1.0";
     });
 
@@ -82,7 +82,7 @@ TEST_F(FlushTest, EventsAccumulateInQueue) {
     auto tracker = beacon::Tracker::configure([](beacon::Options& o) {
         o.api_key = "test-key";
         o.api_base_url = "http://localhost:9999";
-        o.app_name = "TestApp";
+        o.product = "TestApp";
         o.app_version = "1.0";
         o.flush_interval_seconds = 3600;
         o.max_batch_size = 1000;

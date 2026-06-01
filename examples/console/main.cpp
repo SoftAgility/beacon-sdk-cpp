@@ -13,7 +13,7 @@ int main() {
     beacon::Tracker::configure([](beacon::Options& opts) {
         opts.api_key      = "sk-live-your-api-key-here";
         opts.api_base_url = "https://your-beacon-instance.com";
-        opts.app_name     = "InventoryManager";
+        opts.product      = "InventoryManager";
         opts.app_version  = "2.1.0";
 
         // Optional tuning (all have safe defaults):
