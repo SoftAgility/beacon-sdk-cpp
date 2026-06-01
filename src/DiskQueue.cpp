@@ -96,11 +96,23 @@ bool DiskQueue::open(const std::string& path) {
         return false;
     }
 
-    // Enable WAL mode
-    rc = sqlite3_exec(db_, "PRAGMA journal_mode=WAL;", nullptr, nullptr, &err_msg);
+    // Use the default rollback journal (NOT WAL). WAL routes writes to a side -wal file,
+    // so the main .db no longer reflects the queue's true size and the max_queue_size_mb
+    // cap (which measures the .db via get_file_size_bytes) would under-count. WAL also buys
+    // nothing here: a single connection, internally serialized, writing only on send
+    // failure — there is no concurrency for it to unlock. Setting DELETE explicitly also
+    // migrates any database created by an earlier SDK version (which used WAL) back to
+    // rollback-journal mode (the change auto-checkpoints, then removes the -wal/-shm files).
+    rc = sqlite3_exec(db_, "PRAGMA journal_mode=DELETE;", nullptr, nullptr, &err_msg);
     if (rc != SQLITE_OK && err_msg) {
         sqlite3_free(err_msg);
     }
+
+    // Wait (up to 5s) for the write lock instead of failing immediately with SQLITE_BUSY
+    // when another instance sharing the same Product holds it. THIS (not WAL) is what lets
+    // multiple instances of the same app coexist on one queue file — they serialize access
+    // gracefully. Off the user-facing path (background flush only).
+    sqlite3_busy_timeout(db_, 5000);
 
     return true;
 }

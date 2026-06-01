@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.25)
 
 project(beacon_sdk
-    VERSION 3.0.0
+    VERSION 3.1.0
     LANGUAGES CXX
     DESCRIPTION "SoftAgility Beacon C++ SDK"
 )

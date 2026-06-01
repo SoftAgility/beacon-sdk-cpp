@@ -62,6 +62,25 @@ TEST_F(DiskQueueTest, OpenInvalidPathReturnsFalse) {
     EXPECT_FALSE(q.is_open());
 }
 
+// Disk-queue contention: two DiskQueue instances on the same file — the same app (same
+// Product) running as two processes on one host — can both enqueue without erroring.
+// Graceful serialization comes from busy_timeout (rollback journal, not WAL).
+TEST_F(DiskQueueTest, TwoInstancesOnSameFileBothEnqueue) {
+    ASSERT_TRUE(queue_.open(db_path_));
+
+    beacon::internal::DiskQueue second;
+    ASSERT_TRUE(second.open(db_path_));
+
+    queue_.enqueue({ make_event_json("evt-a") });
+    second.enqueue({ make_event_json("evt-b") });
+
+    // Both rows are visible — neither enqueue failed with SQLITE_BUSY.
+    auto events = queue_.dequeue_up_to(10);
+    EXPECT_EQ(events.size(), 2u);
+
+    second.close();
+}
+
 // FR-606: Enqueue and dequeue round-trip
 TEST_F(DiskQueueTest, EnqueueDequeueRoundTrip) {
     ASSERT_TRUE(queue_.open(db_path_));

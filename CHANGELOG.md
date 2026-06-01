@@ -6,6 +6,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [3.1.0] - 2026-06-01
+
+### Changed
+
+- **Disk queue: graceful multi-instance contention + consistent journaling (non-breaking).** Set `sqlite3_busy_timeout(db, 5000)` at both open sites so two instances of the same app (same `product`) sharing one queue file serialize gracefully — a contending writer waits up to 5s for the lock instead of erroring with `SQLITE_BUSY`. Also switched the offline queue from WAL to the default rollback journal (`PRAGMA journal_mode=DELETE`), matching the .NET SDK: WAL added nothing for this single-connection, write-on-failure-only queue and made the `max_queue_size_mb` cap under-count disk usage (writes lived in the uncounted `-wal` sidecar). Existing WAL databases from an earlier version migrate back automatically on open. Off the user-facing path: `track()` is non-blocking; only the background flush touches the disk queue.
+
 ## [3.0.0] - 2026-06-01
 
 ### Changed

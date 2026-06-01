@@ -1250,8 +1250,16 @@ void Tracker::init_disk_queue() {
             if (err_msg) sqlite3_free(err_msg);
         }
 
-        // WAL mode
-        sqlite3_exec(db_, "PRAGMA journal_mode=WAL;", nullptr, nullptr, nullptr);
+        // Default rollback journal (NOT WAL): keeps the main .db reflecting the queue
+        // size for the max_queue_size_mb cap, and WAL buys nothing for this single-
+        // connection, write-on-failure-only queue. Explicit DELETE also migrates any
+        // WAL database from an earlier SDK version back to rollback-journal mode.
+        sqlite3_exec(db_, "PRAGMA journal_mode=DELETE;", nullptr, nullptr, nullptr);
+
+        // Wait (up to 5s) for the lock instead of erroring with SQLITE_BUSY when another
+        // instance sharing the same Product holds it — THIS is what lets multiple instances
+        // of the same app coexist on one queue file (graceful serialization).
+        sqlite3_busy_timeout(db_, 5000);
 
     } catch (const std::exception& ex) {
         log(LogLevel::Warning,

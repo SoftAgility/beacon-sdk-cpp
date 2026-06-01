@@ -14,9 +14,9 @@
 // will fail if they diverge.
 
 #define BEACON_VERSION_MAJOR  3
-#define BEACON_VERSION_MINOR  0
+#define BEACON_VERSION_MINOR  1
 #define BEACON_VERSION_PATCH  0
-#define BEACON_VERSION_STRING "3.0.0"
+#define BEACON_VERSION_STRING "3.1.0"
 
 namespace beacon {
 
