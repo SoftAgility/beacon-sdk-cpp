@@ -116,8 +116,8 @@ std::shared_ptr<Tracker> Tracker::configure(Options options) {
     if (options.product.empty()) {
         warn_and_disable("product");
     }
-    if (options.app_version.empty()) {
-        warn_and_disable("app_version");
+    if (options.product_version.empty()) {
+        warn_and_disable("product_version");
     }
 
     // Strip trailing slash from URL
@@ -125,12 +125,12 @@ std::shared_ptr<Tracker> Tracker::configure(Options options) {
         options.api_base_url.pop_back();
     }
 
-    // Truncate product and app_version
+    // Truncate product and product_version
     if (options.product.size() > 128) {
         options.product.resize(128);
     }
-    if (options.app_version.size() > 256) {
-        options.app_version.resize(256);
+    if (options.product_version.size() > 256) {
+        options.product_version.resize(256);
     }
 
     // Clamp numeric values
@@ -300,18 +300,18 @@ void Tracker::identify(std::string actor_id) {
         std::string api_key = options_.api_key;
         std::string base_url = options_.api_base_url;
         std::string product = options_.product;
-        std::string app_version = options_.app_version;
+        std::string product_version = options_.product_version;
         auto logger = options_.logger;
 
-        std::thread([device_id_copy, actor_id, api_key, base_url, product, app_version, logger]() {
+        std::thread([device_id_copy, actor_id, api_key, base_url, product, product_version, logger]() {
             try {
                 nlohmann::json body;
                 body["anonymous_actor_id"] = device_id_copy;
                 body["identified_actor_id"] = actor_id;
                 body["identified_at"] = utc_iso8601_now();
                 body["product"] = product;
-                if (!app_version.empty()) {
-                    body["source_version"] = app_version;
+                if (!product_version.empty()) {
+                    body["product_version"] = product_version;
                 }
 
                 internal::HttpClient http;
@@ -408,7 +408,7 @@ void Tracker::track_impl(std::string category, std::string name, std::string act
         j["timestamp"] = timestamp;
         j["actor_id"] = actor_id;
         j["product"] = options_.product;
-        j["source_version"] = options_.app_version;
+        j["product_version"] = options_.product_version;
 
         // Session ID + account/license context
         {
@@ -568,12 +568,12 @@ void Tracker::start_session_impl(std::string actor_id) {
 
         // Start new session in background (fire-and-forget)
         std::string product = options_.product;
-        std::string app_version = options_.app_version;
+        std::string product_version = options_.product_version;
         std::string api_key = options_.api_key;
         std::string base_url = options_.api_base_url;
         auto logger_start = options_.logger;
 
-        std::thread([new_session_id, actor_id, product, app_version,
+        std::thread([new_session_id, actor_id, product, product_version,
                      started_at, api_key, base_url, logger_start,
                      account_snapshot, license_snapshot]() {
             try {
@@ -581,7 +581,7 @@ void Tracker::start_session_impl(std::string actor_id) {
                 body["session_id"] = new_session_id;
                 body["actor_id"] = actor_id;
                 body["product"] = product;
-                body["source_version"] = app_version;
+                body["product_version"] = product_version;
                 body["started_at"] = started_at;
                 if (!account_snapshot.empty()) body["account_id"] = account_snapshot;
                 if (!license_snapshot.empty()) body["license_id"] = license_snapshot;
@@ -911,7 +911,7 @@ void Tracker::track_exception_impl(const std::exception& ex, std::string actor_i
         body["occurred_at"] = occurred_at;
         body["actor_id"] = actor_id;
         body["product"] = options_.product;
-        body["source_version"] = options_.app_version;
+        body["product_version"] = options_.product_version;
 
         if (!message.empty()) {
             body["message"] = message;
@@ -1008,7 +1008,7 @@ void Tracker::exportEventManifest(std::string file_path) {
     manifest["schema_version"] = "1";
     manifest["generated_at"] = utc_iso8601_now();
     manifest["product"] = options_.product;
-    manifest["source_version"] = options_.app_version;
+    manifest["product_version"] = options_.product_version;
 
     nlohmann::json entries = nlohmann::json::array();
     for (const auto& [cat, nm] : event_definitions_) {

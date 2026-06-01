@@ -68,7 +68,7 @@ TEST_F(LifecycleTest, DestructorPersistsQueuedEvents) {
             o.api_key = "test-key";
             o.api_base_url = "http://localhost:9999";
             o.product = product;
-            o.app_version = "1.0.0";
+            o.product_version = "1.0.0";
             o.flush_interval_seconds = 3600; // Prevent auto-flush
             o.max_batch_size = 1000;
         });
@@ -106,7 +106,7 @@ TEST_F(LifecycleTest, FullLifecycleNoCrash) {
         o.api_key = "test-key";
         o.api_base_url = "http://localhost:9999";
         o.product = "LifecycleTest";
-        o.app_version = "1.0";
+        o.product_version = "1.0";
         o.flush_interval_seconds = 3600;
     });
 
@@ -134,7 +134,7 @@ TEST_F(LifecycleTest, DisabledSdkMethodsAreNoops) {
     auto tracker = beacon::Tracker::configure([](beacon::Options& o) {
         o.enabled = false;
         o.product = "TestApp";
-        o.app_version = "1.0";
+        o.product_version = "1.0";
     });
 
     EXPECT_EQ(tracker->last_flush_status(), beacon::FlushStatus::Disabled);
@@ -157,7 +157,7 @@ TEST_F(LifecycleTest, DisabledSdkNoBackgroundThread) {
     auto tracker = beacon::Tracker::configure([](beacon::Options& o) {
         o.enabled = false;
         o.product = "TestApp";
-        o.app_version = "1.0";
+        o.product_version = "1.0";
     });
 
     // track should be no-op, queue should be 0
@@ -177,7 +177,7 @@ TEST_F(LifecycleTest, DestructorNoEventsNoCrash) {
         o.api_key = "test-key";
         o.api_base_url = "http://localhost:9999";
         o.product = "EmptyDestroyApp";
-        o.app_version = "1.0";
+        o.product_version = "1.0";
         o.flush_interval_seconds = 3600;
     });
 

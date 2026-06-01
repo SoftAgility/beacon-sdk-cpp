@@ -21,7 +21,7 @@ protected:
             o.api_key = "test-key";
             o.api_base_url = "http://localhost:9999";
             o.product = "TestApp";
-            o.app_version = "1.0.0";
+            o.product_version = "1.0.0";
             o.flush_interval_seconds = 3600;
             o.max_batch_size = 1000;
             o.max_breadcrumbs = 25;
@@ -45,7 +45,7 @@ protected:
             o.api_key = "test-key";
             o.api_base_url = "http://localhost:9999";
             o.product = "TestApp";
-            o.app_version = "1.0.0";
+            o.product_version = "1.0.0";
             o.flush_interval_seconds = 3600;
             o.max_batch_size = 1000;
             o.max_breadcrumbs = 0;
@@ -69,7 +69,7 @@ protected:
             o.api_key = "test-key";
             o.api_base_url = "http://localhost:9999";
             o.product = "TestApp";
-            o.app_version = "1.0.0";
+            o.product_version = "1.0.0";
             o.flush_interval_seconds = 3600;
             o.max_batch_size = 1000;
             o.max_breadcrumbs = 3;
@@ -165,9 +165,9 @@ TEST_F(ExceptionsTest, TrackExceptionWithIdentifiedActorProducesValidPayload) {
     ASSERT_TRUE(j.contains("product"));
     EXPECT_EQ(j["product"], "TestApp");
 
-    // source_version
-    ASSERT_TRUE(j.contains("source_version"));
-    EXPECT_EQ(j["source_version"], "1.0.0");
+    // product_version
+    ASSERT_TRUE(j.contains("product_version"));
+    EXPECT_EQ(j["product_version"], "1.0.0");
 }
 
 // AC-914: trackException with explicit actor produces valid JSON
@@ -189,7 +189,7 @@ TEST_F(ExceptionsTest, TrackExceptionWithExplicitActorProducesValidPayload) {
     ASSERT_TRUE(j.contains("exception_id"));
     EXPECT_EQ(j["exception_id"].get<std::string>().size(), 36u);
     EXPECT_EQ(j["product"], "TestApp");
-    EXPECT_EQ(j["source_version"], "1.0.0");
+    EXPECT_EQ(j["product_version"], "1.0.0");
 }
 
 // ==========================================================================

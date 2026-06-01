@@ -16,7 +16,7 @@ protected:
             o.api_key = "test-key";
             o.api_base_url = "http://localhost:9999";
             o.product = "TestApp";
-            o.app_version = "1.0.0";
+            o.product_version = "1.0.0";
             o.flush_interval_seconds = 3600;
             o.max_batch_size = 1000;
         });

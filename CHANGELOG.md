@@ -6,6 +6,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [3.0.0] - 2026-06-01
+
+### Changed
+
+- **BREAKING — renamed the version config field `Options::app_version` → `Options::product_version`.** Call sites must update `opts.app_version = ...` to `opts.product_version = ...`. No compatibility alias is provided. The value flowing is unchanged — still the application version string.
+- **BREAKING — renamed the wire field `source_version` → `product_version`** on every JSON payload: event, session-start, exception, actor-identify, and the exported event manifest. The backend now reads the `product_version` wire key.
+
 ## [2.0.0] - 2026-05-31
 
 ### Changed

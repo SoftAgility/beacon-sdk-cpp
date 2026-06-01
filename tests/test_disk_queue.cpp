@@ -39,7 +39,7 @@ protected:
         j["timestamp"] = "2026-03-13T00:00:00.000Z";
         j["actor_id"] = "user-1";
         j["product"] = "TestApp";
-        j["source_version"] = "1.0";
+        j["product_version"] = "1.0";
         return j.dump();
     }
 

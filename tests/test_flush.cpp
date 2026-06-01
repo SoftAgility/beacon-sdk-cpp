@@ -17,7 +17,7 @@ TEST_F(FlushTest, FlushOnDisabledSdkReturnsTrue) {
         o.api_key = "";
         o.api_base_url = "http://localhost:9999";
         o.product = "TestApp";
-        o.app_version = "1.0";
+        o.product_version = "1.0";
     });
 
     ASSERT_NE(tracker, nullptr);
@@ -30,7 +30,7 @@ TEST_F(FlushTest, EmptyFlushNoEvents) {
         o.api_key = "test-key";
         o.api_base_url = "http://localhost:9999";
         o.product = "TestApp";
-        o.app_version = "1.0.0";
+        o.product_version = "1.0.0";
         o.flush_interval_seconds = 3600;
     });
 
@@ -48,7 +48,7 @@ TEST_F(FlushTest, InitialFlushStatusNotConnected) {
         o.api_key = "test-key";
         o.api_base_url = "http://localhost:9999";
         o.product = "TestApp";
-        o.app_version = "1.0";
+        o.product_version = "1.0";
     });
 
     EXPECT_EQ(tracker->last_flush_status(), beacon::FlushStatus::NotConnected);
@@ -59,7 +59,7 @@ TEST_F(FlushTest, DisabledTrackerHasDisabledStatus) {
     auto tracker = beacon::Tracker::configure([](beacon::Options& o) {
         o.enabled = false;
         o.product = "TestApp";
-        o.app_version = "1.0";
+        o.product_version = "1.0";
     });
 
     EXPECT_EQ(tracker->last_flush_status(), beacon::FlushStatus::Disabled);
@@ -70,7 +70,7 @@ TEST_F(FlushTest, DisabledSdkFlushReturnsTrue) {
     auto tracker = beacon::Tracker::configure([](beacon::Options& o) {
         o.enabled = false;
         o.product = "TestApp";
-        o.app_version = "1.0";
+        o.product_version = "1.0";
     });
 
     EXPECT_TRUE(tracker->flush());
@@ -83,7 +83,7 @@ TEST_F(FlushTest, EventsAccumulateInQueue) {
         o.api_key = "test-key";
         o.api_base_url = "http://localhost:9999";
         o.product = "TestApp";
-        o.app_version = "1.0";
+        o.product_version = "1.0";
         o.flush_interval_seconds = 3600;
         o.max_batch_size = 1000;
     });

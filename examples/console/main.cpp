@@ -14,7 +14,7 @@ int main() {
         opts.api_key      = "sk-live-your-api-key-here";
         opts.api_base_url = "https://your-beacon-instance.com";
         opts.product      = "InventoryManager";
-        opts.app_version  = "2.1.0";
+        opts.product_version  = "2.1.0";
 
         // Optional tuning (all have safe defaults):
         // opts.flush_interval_seconds = 60;   // default: 60s

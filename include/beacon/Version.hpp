@@ -13,10 +13,10 @@
 // declaration in CMakeLists.txt by hand. A drift-lock test in the CI matrix
 // will fail if they diverge.
 
-#define BEACON_VERSION_MAJOR  2
+#define BEACON_VERSION_MAJOR  3
 #define BEACON_VERSION_MINOR  0
 #define BEACON_VERSION_PATCH  0
-#define BEACON_VERSION_STRING "2.0.0"
+#define BEACON_VERSION_STRING "3.0.0"
 
 namespace beacon {
 

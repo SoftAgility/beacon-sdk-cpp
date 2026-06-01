@@ -10,7 +10,7 @@ TEST(OptionsTest, DefaultValues) {
     EXPECT_EQ(opts.api_key, "");
     EXPECT_EQ(opts.api_base_url, "");
     EXPECT_EQ(opts.product, "");
-    EXPECT_EQ(opts.app_version, "");
+    EXPECT_EQ(opts.product_version, "");
     EXPECT_EQ(opts.enabled, true);
     EXPECT_EQ(opts.flush_interval_seconds, 60);
     EXPECT_EQ(opts.max_batch_size, 25);
@@ -32,7 +32,7 @@ TEST_F(OptionsClampingTest, FlushIntervalClampedToMin) {
         o.api_key = "k";
         o.api_base_url = "http://localhost:9999";
         o.product = "App";
-        o.app_version = "1.0";
+        o.product_version = "1.0";
         o.flush_interval_seconds = 0;
     });
     EXPECT_EQ(tracker->options().flush_interval_seconds, 1);
@@ -43,7 +43,7 @@ TEST_F(OptionsClampingTest, FlushIntervalClampedToMax) {
         o.api_key = "k";
         o.api_base_url = "http://localhost:9999";
         o.product = "App";
-        o.app_version = "1.0";
+        o.product_version = "1.0";
         o.flush_interval_seconds = 5000;
     });
     EXPECT_EQ(tracker->options().flush_interval_seconds, 3600);
@@ -55,7 +55,7 @@ TEST_F(OptionsClampingTest, MaxBatchSizeClampedToMin) {
         o.api_key = "k";
         o.api_base_url = "http://localhost:9999";
         o.product = "App";
-        o.app_version = "1.0";
+        o.product_version = "1.0";
         o.max_batch_size = 0;
     });
     EXPECT_EQ(tracker->options().max_batch_size, 1);
@@ -66,7 +66,7 @@ TEST_F(OptionsClampingTest, MaxBatchSizeClampedToMax) {
         o.api_key = "k";
         o.api_base_url = "http://localhost:9999";
         o.product = "App";
-        o.app_version = "1.0";
+        o.product_version = "1.0";
         o.max_batch_size = 2000;
     });
     EXPECT_EQ(tracker->options().max_batch_size, 1000);
@@ -78,7 +78,7 @@ TEST_F(OptionsClampingTest, MaxQueueSizeClampedToMin) {
         o.api_key = "k";
         o.api_base_url = "http://localhost:9999";
         o.product = "App";
-        o.app_version = "1.0";
+        o.product_version = "1.0";
         o.max_queue_size_mb = -1;
     });
     EXPECT_EQ(tracker->options().max_queue_size_mb, 1);
@@ -89,7 +89,7 @@ TEST_F(OptionsClampingTest, MaxQueueSizeClampedToMax) {
         o.api_key = "k";
         o.api_base_url = "http://localhost:9999";
         o.product = "App";
-        o.app_version = "1.0";
+        o.product_version = "1.0";
         o.max_queue_size_mb = 2000;
     });
     EXPECT_EQ(tracker->options().max_queue_size_mb, 1000);
@@ -101,7 +101,7 @@ TEST_F(OptionsClampingTest, MaxBreadcrumbsClampedToMin) {
         o.api_key = "k";
         o.api_base_url = "http://localhost:9999";
         o.product = "App";
-        o.app_version = "1.0";
+        o.product_version = "1.0";
         o.max_breadcrumbs = -5;
     });
     EXPECT_EQ(tracker->options().max_breadcrumbs, 0);
@@ -112,7 +112,7 @@ TEST_F(OptionsClampingTest, MaxBreadcrumbsClampedToMax) {
         o.api_key = "k";
         o.api_base_url = "http://localhost:9999";
         o.product = "App";
-        o.app_version = "1.0";
+        o.product_version = "1.0";
         o.max_breadcrumbs = 500;
     });
     EXPECT_EQ(tracker->options().max_breadcrumbs, 200);
@@ -124,20 +124,20 @@ TEST_F(OptionsClampingTest, AppNameTruncatedTo128) {
         o.api_key = "k";
         o.api_base_url = "http://localhost:9999";
         o.product = std::string(200, 'a');
-        o.app_version = "1.0";
+        o.product_version = "1.0";
     });
     EXPECT_EQ(tracker->options().product.size(), 128u);
 }
 
-// FR-590: app_version truncated to 256 chars
+// FR-590: product_version truncated to 256 chars
 TEST_F(OptionsClampingTest, AppVersionTruncatedTo256) {
     auto tracker = beacon::Tracker::configure([](beacon::Options& o) {
         o.api_key = "k";
         o.api_base_url = "http://localhost:9999";
         o.product = "App";
-        o.app_version = std::string(300, 'v');
+        o.product_version = std::string(300, 'v');
     });
-    EXPECT_EQ(tracker->options().app_version.size(), 256u);
+    EXPECT_EQ(tracker->options().product_version.size(), 256u);
 }
 
 // FR-590: Trailing slash stripped from api_base_url
@@ -146,7 +146,7 @@ TEST_F(OptionsClampingTest, TrailingSlashStripped) {
         o.api_key = "k";
         o.api_base_url = "http://localhost:9999///";
         o.product = "App";
-        o.app_version = "1.0";
+        o.product_version = "1.0";
     });
     EXPECT_EQ(tracker->options().api_base_url, "http://localhost:9999");
 }
@@ -157,21 +157,21 @@ TEST_F(OptionsClampingTest, EmptyAppNameDisablesSdk) {
         o.api_key = "k";
         o.api_base_url = "http://localhost:9999";
         o.product = "";
-        o.app_version = "1.0";
+        o.product_version = "1.0";
     });
     ASSERT_NE(tracker, nullptr);
     EXPECT_EQ(tracker->last_flush_status(), beacon::FlushStatus::Disabled);
 }
 
-// EC-465: Empty app_version does NOT disable SDK (not a required field per PRD)
+// EC-465: Empty product_version does NOT disable SDK (not a required field per PRD)
 // Note: The PRD specifies api_key, api_base_url, and product as required.
-// app_version is required — empty disables the SDK (parity with .NET SDK).
+// product_version is required — empty disables the SDK (parity with .NET SDK).
 TEST_F(OptionsClampingTest, EmptyAppVersionDisablesSdk) {
     auto tracker = beacon::Tracker::configure([](beacon::Options& o) {
         o.api_key = "k";
         o.api_base_url = "http://localhost:9999";
         o.product = "App";
-        o.app_version = "";
+        o.product_version = "";
     });
     ASSERT_NE(tracker, nullptr);
     EXPECT_EQ(tracker->last_flush_status(), beacon::FlushStatus::Disabled);
@@ -183,7 +183,7 @@ TEST_F(OptionsClampingTest, HttpUrlAccepted) {
         o.api_key = "k";
         o.api_base_url = "http://localhost:9999";
         o.product = "App";
-        o.app_version = "1.0";
+        o.product_version = "1.0";
     });
     EXPECT_EQ(tracker->last_flush_status(), beacon::FlushStatus::NotConnected);
 }
@@ -194,7 +194,7 @@ TEST_F(OptionsClampingTest, HttpsUrlAccepted) {
         o.api_key = "k";
         o.api_base_url = "https://example.com";
         o.product = "App";
-        o.app_version = "1.0";
+        o.product_version = "1.0";
     });
     EXPECT_EQ(tracker->last_flush_status(), beacon::FlushStatus::NotConnected);
 }
@@ -205,7 +205,7 @@ TEST_F(OptionsClampingTest, FtpUrlDisablesSdk) {
         o.api_key = "k";
         o.api_base_url = "ftp://example.com";
         o.product = "App";
-        o.app_version = "1.0";
+        o.product_version = "1.0";
     });
     ASSERT_NE(tracker, nullptr);
     EXPECT_EQ(tracker->last_flush_status(), beacon::FlushStatus::Disabled);
@@ -217,7 +217,7 @@ TEST_F(OptionsClampingTest, FlushIntervalExactlyAtMin) {
         o.api_key = "k";
         o.api_base_url = "http://localhost:9999";
         o.product = "App";
-        o.app_version = "1.0";
+        o.product_version = "1.0";
         o.flush_interval_seconds = 1;
     });
     EXPECT_EQ(tracker->options().flush_interval_seconds, 1);
@@ -229,7 +229,7 @@ TEST_F(OptionsClampingTest, FlushIntervalExactlyAtMax) {
         o.api_key = "k";
         o.api_base_url = "http://localhost:9999";
         o.product = "App";
-        o.app_version = "1.0";
+        o.product_version = "1.0";
         o.flush_interval_seconds = 3600;
     });
     EXPECT_EQ(tracker->options().flush_interval_seconds, 3600);
@@ -241,7 +241,7 @@ TEST_F(OptionsClampingTest, MaxBatchSizeExactlyAtMin) {
         o.api_key = "k";
         o.api_base_url = "http://localhost:9999";
         o.product = "App";
-        o.app_version = "1.0";
+        o.product_version = "1.0";
         o.max_batch_size = 1;
     });
     EXPECT_EQ(tracker->options().max_batch_size, 1);
@@ -253,7 +253,7 @@ TEST_F(OptionsClampingTest, MaxBreadcrumbsExactlyZero) {
         o.api_key = "k";
         o.api_base_url = "http://localhost:9999";
         o.product = "App";
-        o.app_version = "1.0";
+        o.product_version = "1.0";
         o.max_breadcrumbs = 0;
     });
     EXPECT_EQ(tracker->options().max_breadcrumbs, 0);

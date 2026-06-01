@@ -25,7 +25,7 @@ TEST_F(ManifestTest, ExportManifestWritesValidJson) {
         o.api_key = "test-key";
         o.api_base_url = "http://localhost:9999";
         o.product = "TestApp";
-        o.app_version = "2.0";
+        o.product_version = "2.0";
         o.events
             .define("app", "launched")
             .define("inventory", "item_added")
@@ -46,7 +46,7 @@ TEST_F(ManifestTest, ExportManifestWritesValidJson) {
     auto j = nlohmann::json::parse(ifs);
     EXPECT_EQ(j["schema_version"], "1");
     EXPECT_EQ(j["product"], "TestApp");
-    EXPECT_EQ(j["source_version"], "2.0");
+    EXPECT_EQ(j["product_version"], "2.0");
     EXPECT_TRUE(j.contains("generated_at"));
     ASSERT_TRUE(j.contains("entries"));
 
@@ -67,7 +67,7 @@ TEST_F(ManifestTest, ExportManifestWorksWhenDisabled) {
     auto tracker = beacon::Tracker::configure([](beacon::Options& o) {
         o.enabled = false;
         o.product = "TestApp";
-        o.app_version = "1.0";
+        o.product_version = "1.0";
         o.events.define("cat", "name");
     });
 
@@ -91,7 +91,7 @@ TEST_F(ManifestTest, ExportManifestInvalidPathThrows) {
         o.api_key = "test-key";
         o.api_base_url = "http://localhost:9999";
         o.product = "TestApp";
-        o.app_version = "1.0";
+        o.product_version = "1.0";
     });
 
     EXPECT_THROW({

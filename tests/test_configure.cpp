@@ -36,7 +36,7 @@ TEST_F(ConfigureTest, DoubleConfigureThrowsLogicError) {
         o.api_key = "test-key";
         o.api_base_url = "http://localhost:9999";
         o.product = "TestApp";
-        o.app_version = "1.0";
+        o.product_version = "1.0";
     });
 
     EXPECT_THROW({
@@ -45,7 +45,7 @@ TEST_F(ConfigureTest, DoubleConfigureThrowsLogicError) {
                 o.api_key = "another-key";
                 o.api_base_url = "http://localhost:9999";
                 o.product = "TestApp2";
-                o.app_version = "1.0";
+                o.product_version = "1.0";
             });
         } catch (const std::logic_error& e) {
             EXPECT_NE(std::string(e.what()).find("already configured"), std::string::npos);
@@ -60,7 +60,7 @@ TEST_F(ConfigureTest, DoubleConfigureWithOptionsStructThrows) {
     opts.api_key = "k";
     opts.api_base_url = "http://localhost:9999";
     opts.product = "App";
-    opts.app_version = "1.0";
+    opts.product_version = "1.0";
     beacon::Tracker::configure(opts);
 
     EXPECT_THROW(beacon::Tracker::configure(opts), std::logic_error);
@@ -74,7 +74,7 @@ TEST_F(ConfigureTest, EmptyApiKeyDisablesSdkAndLogsWarning) {
         o.api_key = "";
         o.api_base_url = "http://localhost:9999";
         o.product = "TestApp";
-        o.app_version = "1.0";
+        o.product_version = "1.0";
         o.logger = logger;
     });
 
@@ -99,7 +99,7 @@ TEST_F(ConfigureTest, InvalidUrlDisablesSdk) {
         o.api_key = "k";
         o.api_base_url = "not-a-url";
         o.product = "app";
-        o.app_version = "1.0";
+        o.product_version = "1.0";
     });
 
     ASSERT_NE(tracker, nullptr);
@@ -114,7 +114,7 @@ TEST_F(ConfigureTest, InvalidUrlLogsWarning) {
         o.api_key = "k";
         o.api_base_url = "not-a-url";
         o.product = "app";
-        o.app_version = "1.0";
+        o.product_version = "1.0";
         o.logger = logger;
     });
 
@@ -135,7 +135,7 @@ TEST_F(ConfigureTest, ValidConfigHasNotConnectedStatus) {
         o.api_key = "test-key";
         o.api_base_url = "http://localhost:9999";
         o.product = "TestApp";
-        o.app_version = "1.0";
+        o.product_version = "1.0";
     });
 
     ASSERT_NE(tracker, nullptr);
@@ -148,7 +148,7 @@ TEST_F(ConfigureTest, OptionsClampedToValidRanges) {
         o.api_key = "test-key";
         o.api_base_url = "http://localhost:9999";
         o.product = "TestApp";
-        o.app_version = "1.0";
+        o.product_version = "1.0";
         o.flush_interval_seconds = -5;
         o.max_batch_size = 5000;
         o.max_queue_size_mb = 0;
@@ -173,7 +173,7 @@ TEST_F(ConfigureTest, InstanceReturnsSingletonAfterConfigure) {
         o.api_key = "test-key";
         o.api_base_url = "http://localhost:9999";
         o.product = "TestApp";
-        o.app_version = "1.0";
+        o.product_version = "1.0";
     });
 
     auto instance = beacon::Tracker::instance();
@@ -187,7 +187,7 @@ TEST_F(ConfigureTest, ConfigureWithOptionsStruct) {
     opts.api_key = "test-key";
     opts.api_base_url = "http://localhost:9999";
     opts.product = "TestApp";
-    opts.app_version = "1.0";
+    opts.product_version = "1.0";
 
     auto tracker = beacon::Tracker::configure(std::move(opts));
     ASSERT_NE(tracker, nullptr);
@@ -200,7 +200,7 @@ TEST_F(ConfigureTest, DoubleConfigureDoesNotModifySingleton) {
         o.api_key = "original-key";
         o.api_base_url = "http://localhost:9999";
         o.product = "OriginalApp";
-        o.app_version = "1.0";
+        o.product_version = "1.0";
     });
 
     try {
@@ -208,7 +208,7 @@ TEST_F(ConfigureTest, DoubleConfigureDoesNotModifySingleton) {
             o.api_key = "new-key";
             o.api_base_url = "http://localhost:9999";
             o.product = "NewApp";
-            o.app_version = "2.0";
+            o.product_version = "2.0";
         });
     } catch (const std::logic_error&) {
         // Expected

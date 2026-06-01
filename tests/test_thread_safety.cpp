@@ -16,7 +16,7 @@ TEST_F(ThreadSafetyTest, ConcurrentTrackCalls) {
         o.api_key = "test-key";
         o.api_base_url = "http://localhost:9999";
         o.product = "ThreadTestApp";
-        o.app_version = "1.0.0";
+        o.product_version = "1.0.0";
         o.flush_interval_seconds = 3600; // Prevent auto-flush
         o.max_batch_size = 100000;       // Prevent batch-triggered flush
     });
@@ -52,7 +52,7 @@ TEST_F(ThreadSafetyTest, ConcurrentIdentifyAndTrack) {
         o.api_key = "test-key";
         o.api_base_url = "http://localhost:9999";
         o.product = "ThreadTestApp2";
-        o.app_version = "1.0.0";
+        o.product_version = "1.0.0";
         o.flush_interval_seconds = 3600;
         o.max_batch_size = 100000;
     });

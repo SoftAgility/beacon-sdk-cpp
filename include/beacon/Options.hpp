@@ -12,7 +12,7 @@ struct Options {
     std::string api_key;
     std::string api_base_url;
     std::string product;
-    std::string app_version;
+    std::string product_version;
     bool enabled = true;
     int flush_interval_seconds = 60;
     int max_batch_size = 25;
