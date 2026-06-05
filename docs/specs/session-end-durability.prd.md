@@ -1,6 +1,6 @@
 # Session-end durability (C++ SDK) — capture clean app closes instead of relying on the reaper
 
-- **Status:** READY-TO-IMPLEMENT (post-codex revision 1; ABI decision settled at revision 2 — converged)
+- **Status:** Complete — implemented in `cd1efaf` (4.0.0, 2026-06-05). Post-codex revision 1; ABI decision settled at revision 2; final precision pass revision 3.
 - **Owner:** Matthew Clendening
 - **Created:** 2026-06-03
 - **Slug:** `session-end-durability`
@@ -143,4 +143,15 @@ The single load-bearing open item from round 1 — the ABI/versioning choice —
 Final confirmatory pass. Codex verified ABI/versioning is now internally consistent (4.0.0, direct state, recompile — coherent across the doc) and that the 404→recovery path can't enable cross-tenant abuse (server gates create-on-recovery on auth-derived tenant/api_key + start validation). 2 findings (1 Medium, 1 Low), both precision, incorporated; "Everything else looks ready":
 - **Medium:** scope the non-terminal handling to a structured **`session_not_found`** 404, not any bare `404` — a wrong `api_base_url` / missing route / un-upgraded server also returns 404 and must NOT be retained forever as a recovery. → Reworded throughout.
 - **Low:** stale open-question on the `shutdown_flush_timeout_seconds` default (already specified as 2). → Removed.
+
+### Implemented — `cd1efaf` (4.0.0, 2026-06-05)
+Built via the agent pipeline (backend-builder → test-writer → code-reviewer SHIP IT; no qa-validator — library SDK). Delivered as designed, with the C++-specific deltas realized: `pending_session_ends` sibling table in `beacon_queue.db` (queue keyed by `session_id`, self-contained records); `Options::shutdown_flush_timeout_seconds` (default 2, clamped [0,30]); destructor persists-before-clear then does a **bounded synchronous** send on a fresh `HttpClient` after the flush thread is joined, wrapped no-throw; `flush()` drains pending ends and `endSession()` no longer detaches; next-launch `sdk_recovery` drain with original `ended_at`; opt-out/`reset()` purge; 404 scoped to structured `session_not_found` (bare 404 = permanent drop); recovery payload field-name parity with the server. **ABI break accepted → 4.0.0** (Version.hpp + CMake `VERSION`/`SOVERSION 4`).
+
+**Deltas from design (settled during implementation):**
+- `HttpClient::post_json` got a defaulted `timeout_seconds` parameter (not a separate overload) — all 5 existing callsites stay at the 10s default; only the destructor/drain path overrides.
+- libcurl globals made **reference-counted** (`global_init`/`global_cleanup` fire only on 0↔1 transitions) — safe for coexisting trackers.
+- Added a **`db_mutex_`** serializing all `db_` access (not in the PRD): the calling thread now writes `db_` (via `endSession`/`startSession` replacement) concurrently with the flush thread's drain, so `enqueue_to_disk`'s `BEGIN/COMMIT` needs serialization against single-row pending-end statements on the shared FULLMUTEX connection. Code-reviewer confirmed it's deadlock-free (never held across a network call; no inversion with `session_mutex_`).
+- Applied the **.NET port's per-session-snapshot lesson** up front (snapshot actor/account/license at session start; persist reads the snapshot) — so the wrong-actor defect that bit .NET was avoided by construction; RG-1 tests lock it.
+
+Tests: 19 new GoogleTest cases (`test_session_end_durability.cpp` + `session_end_test_helpers.hpp`) incl. RG-1 (per-session snapshot) and RG-2 (recovery field-name parity); 223/223 pass, no regressions. Depends on the server foundation (`ce4f866`) for the `sdk_recovery`/supersede behavior. **Not yet published / released.**
 
