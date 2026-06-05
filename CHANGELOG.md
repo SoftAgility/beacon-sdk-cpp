@@ -6,6 +6,20 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [4.0.0] - 2026-06-05
+
+### Added
+
+- **Durable session-end on shutdown — clean app closes are no longer lost.** Previously, closing the app or calling `endSession()` fired the session end on a detached thread, so the request was usually abandoned when the process exited; the server only closed the session via its inactivity timeout (recorded as a `timeout`, up to a day later). Now the SDK persists a self-contained session-end record (session id, actor, product/version, started-at, account/license, ended-at) to a `pending_session_ends` table in the existing local SQLite queue file **before** the destructor returns, then makes a best-effort **bounded synchronous** send (per-request timeout = the new `Options::shutdown_flush_timeout_seconds`). Anything not delivered at shutdown is sent on the **next launch** as an `sdk_recovery` end carrying the *original* end time — so session duration and completion are recorded faithfully across offline closes, crashes, and force-kills. Multiple sessions ended in one run are each delivered. (The recovery/supersede behavior requires the matching backend support; a live `normal` end while online works against the existing endpoint.)
+- **`Options::shutdown_flush_timeout_seconds`** (default 2; clamped to `[0, 30]`; `0` skips the blocking send and persists-only) — bounds the best-effort send in `~Tracker()`.
+- `HttpClient::post_json` gained an optional per-request `timeout_seconds` parameter (default 10, so existing call sites are unchanged); libcurl global init/cleanup is now reference-counted and owned by the SDK.
+
+### Changed
+
+- **BREAKING (ABI) — `Options` and `Tracker` gained new members.** Because the library ships as a SHARED library and exposes these types directly (no pImpl), the added state is binary-incompatible with 3.x: **consumers must recompile** against the 4.0.0 headers. No source-level breakage — existing code compiles unchanged. Major bump + `SOVERSION 4`.
+- `endSession()` is no longer a detached fire-and-forget — it enqueues the durable record and lets `flush()` (and the background flush thread) deliver it, so `endSession(); flush();` now guarantees delivery when online.
+- `optOut()` and `reset()` purge any pending session-end records (consent-respecting — pending ends are not delivered after opt-out).
+
 ## [3.1.0] - 2026-06-01
 
 ### Changed

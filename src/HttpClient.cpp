@@ -3,12 +3,40 @@
 
 #include <cstdlib>
 #include <cstring>
+#include <mutex>
 #include <string>
 
 #include <curl/curl.h>
 
 namespace beacon {
 namespace internal {
+
+namespace {
+
+// Reference-counted, thread-safe libcurl global lifecycle. curl_global_init
+// is not thread-safe and must bracket all curl_easy_* use process-wide.
+std::mutex g_curl_global_mutex;
+int g_curl_global_refcount = 0;
+
+} // anonymous namespace
+
+void HttpClient::global_init() {
+    std::lock_guard<std::mutex> lock(g_curl_global_mutex);
+    if (g_curl_global_refcount == 0) {
+        curl_global_init(CURL_GLOBAL_DEFAULT);
+    }
+    ++g_curl_global_refcount;
+}
+
+void HttpClient::global_cleanup() {
+    std::lock_guard<std::mutex> lock(g_curl_global_mutex);
+    if (g_curl_global_refcount > 0) {
+        --g_curl_global_refcount;
+        if (g_curl_global_refcount == 0) {
+            curl_global_cleanup();
+        }
+    }
+}
 
 namespace {
 
@@ -77,7 +105,8 @@ bool HttpClient::is_initialized() const {
 
 HttpResult HttpClient::post_json(const std::string& url, const std::string& api_key,
                                   const std::string& json_body,
-                                  const std::string& env_data_header) {
+                                  const std::string& env_data_header,
+                                  long timeout_seconds) {
     HttpResult result;
 
     if (!curl_) {
@@ -97,8 +126,14 @@ HttpResult HttpClient::post_json(const std::string& url, const std::string& api_
     curl_easy_setopt(curl_, CURLOPT_WRITEDATA, &response_body);
     curl_easy_setopt(curl_, CURLOPT_HEADERFUNCTION, header_callback);
     curl_easy_setopt(curl_, CURLOPT_HEADERDATA, &result);
-    curl_easy_setopt(curl_, CURLOPT_TIMEOUT, 10L);
-    curl_easy_setopt(curl_, CURLOPT_CONNECTTIMEOUT, 10L);
+    // Per-request timeout. The bounded destructor send passes
+    // Options.shutdown_flush_timeout_seconds here so a clean close is not
+    // blocked for the historical hardcoded 10s. Guard against a non-positive
+    // value (which libcurl interprets as "no timeout" / infinite) by flooring
+    // at 1s — callers that want to skip the send avoid post_json entirely.
+    long effective_timeout = timeout_seconds > 0 ? timeout_seconds : 1L;
+    curl_easy_setopt(curl_, CURLOPT_TIMEOUT, effective_timeout);
+    curl_easy_setopt(curl_, CURLOPT_CONNECTTIMEOUT, effective_timeout);
     curl_easy_setopt(curl_, CURLOPT_NOSIGNAL, 1L);
 
     // Identify the SDK in HTTP request logs so backend operators can

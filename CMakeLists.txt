@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.25)
 
 project(beacon_sdk
-    VERSION 3.1.0
+    VERSION 4.0.0
     LANGUAGES CXX
     DESCRIPTION "SoftAgility Beacon C++ SDK"
 )
@@ -181,7 +181,7 @@ set_target_properties(beacon_sdk PROPERTIES
     CXX_STANDARD 17
     CXX_STANDARD_REQUIRED ON
     VERSION ${PROJECT_VERSION}
-    SOVERSION 3
+    SOVERSION 4
 )
 
 # Copy public headers to build directory

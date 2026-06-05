@@ -29,6 +29,7 @@ set(TEST_SOURCES
     test_event_definition_builder.cpp
     test_options_validation.cpp
     test_account_license_context.cpp
+    test_session_end_durability.cpp
 )
 
 add_executable(beacon_tests ${TEST_SOURCES})
@@ -36,6 +37,7 @@ add_executable(beacon_tests ${TEST_SOURCES})
 target_link_libraries(beacon_tests
     PRIVATE
         beacon_sdk_static
+        SQLite::SQLite3
         GTest::gtest_main
         nlohmann_json::nlohmann_json
 )

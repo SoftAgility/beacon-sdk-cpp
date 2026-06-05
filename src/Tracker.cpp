@@ -44,6 +44,16 @@
 
 namespace beacon {
 
+namespace {
+
+// Per-request timeout for background (flush-thread) session-end delivery.
+// This is NOT the destructor's bounded send — that uses
+// Options.shutdown_flush_timeout_seconds. The background drain runs off the
+// flush thread where a normal 10s transport timeout is appropriate.
+constexpr long kSessionEndDeliveryTimeoutSeconds = 10L;
+
+} // anonymous namespace
+
 // ---------- Static singleton members ----------
 
 std::mutex Tracker::singleton_mutex_;
@@ -138,6 +148,8 @@ std::shared_ptr<Tracker> Tracker::configure(Options options) {
     options.max_batch_size = std::max(1, std::min(1000, options.max_batch_size));
     options.max_queue_size_mb = std::max(1, std::min(1000, options.max_queue_size_mb));
     options.max_breadcrumbs = std::max(0, std::min(200, options.max_breadcrumbs));
+    options.shutdown_flush_timeout_seconds =
+        std::max(0, std::min(30, options.shutdown_flush_timeout_seconds));
 
     auto tracker = std::shared_ptr<Tracker>(new Tracker(std::move(options)));
     singleton_ = tracker;
@@ -203,6 +215,13 @@ Tracker::Tracker(Options opts)
         return;
     }
 
+    // Take a reference on libcurl's process-wide global state. Paired with
+    // global_cleanup() in the destructor. Owning the global lifecycle
+    // explicitly (rather than relying on curl_easy_init's lazy init) is
+    // required because a destruct-time bounded send may be the last libcurl
+    // use in the process.
+    internal::HttpClient::global_init();
+
     // Set initial flush status based on opt-out state
     if (opted_out_.load()) {
         flush_status_.store(FlushStatus::OptedOut);
@@ -222,6 +241,14 @@ Tracker::Tracker(Options opts)
 
     // Initialize disk queue
     init_disk_queue();
+
+    // Any pending session-ends persisted by a PRIOR process are recovery
+    // deliveries: rewrite their end_reason to "sdk_recovery" before the flush
+    // thread starts draining them. Records enqueued during THIS run keep
+    // "normal". This is the next-launch recovery delivery (Part A step 5):
+    // the flush thread's first tick will deliver them with the ORIGINAL
+    // ended_at via drain_pending_session_ends().
+    mark_pending_session_ends_as_recovery();
 
     // Start background flush thread
     flush_thread_ = std::thread(&Tracker::flush_thread_loop, this);
@@ -254,10 +281,56 @@ Tracker::~Tracker() {
         }
     }
 
-    // Clear session
-    {
-        std::lock_guard<std::mutex> lock(session_mutex_);
-        session_id_.clear();
+    // Durable session-end on clean close (Part A). The entire write -> send ->
+    // delete path is wrapped so nothing escapes the destructor (no
+    // std::terminate). The flush thread is already joined above, so the SQLite
+    // store is exclusively owned here. Skipped when opted out (consent) — the
+    // pending-end store is purged instead.
+    try {
+        internal::PendingSessionEnd rec;
+        bool has_session = false;
+        std::string ended_at = utc_iso8601_now();
+
+        {
+            std::lock_guard<std::mutex> lock(session_mutex_);
+            has_session = build_pending_end_from_snapshot(ended_at, "normal", rec);
+            // Clear session AFTER snapshotting (race-free: flush thread joined).
+            session_id_.clear();
+            session_actor_id_.clear();
+            session_account_id_.clear();
+            session_license_id_.clear();
+            session_started_at_.clear();
+        }
+
+        if (has_session && !opted_out_.load()) {
+            // 1) Persist the durable record first so a failed/skipped send is
+            //    still recovered on next launch with the true ended_at.
+            int64_t rowid = persist_pending_session_end(rec);
+
+            // 2) Best-effort BOUNDED synchronous send on a FRESH HttpClient.
+            //    A timeout of 0 means "skip the send, disk-only".
+            int timeout = options_.shutdown_flush_timeout_seconds;
+            if (timeout > 0 && rowid != 0) {
+                internal::HttpClient http;
+                if (http.init(options_.logger)) {
+                    bool retain_as_recovery = false;
+                    bool should_delete = deliver_session_end(
+                        http, rec, /*recovery=*/false,
+                        static_cast<long>(timeout), retain_as_recovery);
+                    if (should_delete) {
+                        delete_pending_session_end(rowid);
+                    }
+                    // If retained (network failure, or session_not_found that
+                    // raced the start), the record stays in the store. The NEXT
+                    // launch's constructor runs mark_pending_session_ends_as_
+                    // recovery(), flipping it to end_reason="sdk_recovery"
+                    // before the flush thread drains it with the ORIGINAL
+                    // ended_at — so no rewrite is needed here.
+                }
+            }
+        }
+    } catch (...) {
+        // No-throw destructor: swallow everything (logging may itself throw).
     }
 
     // Close disk queue
@@ -265,6 +338,11 @@ Tracker::~Tracker() {
         sqlite3_close_v2(db_);
         db_ = nullptr;
     }
+
+    // Release our reference on libcurl's global state (paired with the
+    // global_init() in the constructor). The fresh HttpClient used above has
+    // already been destroyed, so this is safe.
+    internal::HttpClient::global_cleanup();
 
     // flush_http_ is cleaned up by unique_ptr destructor
 }
@@ -521,49 +599,52 @@ void Tracker::startSession(std::string actor_id) {
 
 void Tracker::start_session_impl(std::string actor_id) {
     try {
-        std::string old_session_id;
         std::string new_session_id = internal::new_uuid_v7();
         std::string started_at = utc_iso8601_now();
 
-        // Snapshot account/license context for the start payload below.
+        // Snapshot account/license context for the NEW session's start payload.
         std::string account_snapshot;
         std::string license_snapshot;
+
+        // Durable end for any PRIOR session, built from its OLD snapshots
+        // (.NET port lesson — never from the live actor/account/license, which
+        // startSession(actor) may already have overwritten).
+        internal::PendingSessionEnd prior_end;
+        bool has_prior = false;
+        std::string prior_ended_at = utc_iso8601_now();
 
         {
             std::lock_guard<std::mutex> lock(session_mutex_);
 
-            // If a session is already active, end it first
+            // If a session is already active, build its durable end FIRST,
+            // from the prior session's snapshots, BEFORE repointing live state.
             if (!session_id_.empty()) {
-                old_session_id = session_id_;
+                has_prior = build_pending_end_from_snapshot(
+                    prior_ended_at, "normal", prior_end);
             }
 
+            // Now repoint live + snapshot state to the NEW session.
             session_id_ = new_session_id;
             environment_sent_.store(false); // Reset for new session
 
             account_snapshot = account_id_;
             license_snapshot = license_id_;
+
+            // Capture the NEW session's snapshots so a later end/destruct uses
+            // the context that was live at THIS session's start.
+            session_actor_id_ = actor_id;
+            session_account_id_ = account_id_;
+            session_license_id_ = license_id_;
+            session_started_at_ = started_at;
         }
 
-        // End old session in background (fire-and-forget)
-        // Capture all needed values by value to avoid accessing 'this' from detached thread.
-        if (!old_session_id.empty()) {
-            std::string api_key_end = options_.api_key;
-            std::string base_url_end = options_.api_base_url;
-            auto logger_end = options_.logger;
-            std::thread([old_session_id, api_key_end, base_url_end, logger_end]() {
-                try {
-                    nlohmann::json body;
-                    body["session_id"] = old_session_id;
-                    body["ended_at"] = utc_iso8601_now();
-                    body["end_reason"] = "normal";
-
-                    internal::HttpClient http;
-                    if (http.init(logger_end)) {
-                        std::string url = base_url_end + "/v1/events/sessions/end";
-                        http.post_json(url, api_key_end, body.dump());
-                    }
-                } catch (...) {}
-            }).detach();
+        // Persist + enqueue the prior session's durable end. It is delivered by
+        // the background flush thread / flush() (Part B) — NOT a detached
+        // fire-and-forget thread. Note we already hold no lock here.
+        if (has_prior) {
+            persist_pending_session_end(prior_end);
+            // Wake the flush thread so the end is delivered promptly.
+            flush_cv_.notify_one();
         }
 
         // Start new session in background (fire-and-forget)
@@ -610,31 +691,30 @@ void Tracker::endSession() {
     if (opted_out_.load()) return;
 
     try {
-        std::string sid;
+        internal::PendingSessionEnd rec;
+        bool has_session = false;
+        std::string ended_at = utc_iso8601_now();
+
         {
             std::lock_guard<std::mutex> lock(session_mutex_);
             if (session_id_.empty()) return; // No-op
-            sid = session_id_;
+            has_session = build_pending_end_from_snapshot(ended_at, "normal", rec);
+            // Clear live + snapshot session state AFTER snapshotting the end.
             session_id_.clear();
+            session_actor_id_.clear();
+            session_account_id_.clear();
+            session_license_id_.clear();
+            session_started_at_.clear();
         }
 
-        std::string api_key = options_.api_key;
-        std::string base_url = options_.api_base_url;
-        auto logger = options_.logger;
-        std::thread([sid, api_key, base_url, logger]() {
-            try {
-                nlohmann::json body;
-                body["session_id"] = sid;
-                body["ended_at"] = utc_iso8601_now();
-                body["end_reason"] = "normal";
-
-                internal::HttpClient http;
-                if (http.init(logger)) {
-                    std::string url = base_url + "/v1/events/sessions/end";
-                    http.post_json(url, api_key, body.dump());
-                }
-            } catch (...) {}
-        }).detach();
+        // Persist the durable end and let the background flush thread / an
+        // explicit flush() deliver it (Part B). No detached fire-and-forget
+        // thread — endSession(); flush(); now gives a synchronous "delivered
+        // when online" guarantee.
+        if (has_session) {
+            persist_pending_session_end(rec);
+            flush_cv_.notify_one();
+        }
 
     } catch (const std::exception& ex) {
         log(LogLevel::Warning, std::string("beacon: endSession() internal error: ") + ex.what());
@@ -700,6 +780,18 @@ void Tracker::optOut() {
             std::lock_guard<std::mutex> lock(queue_mutex_);
             memory_queue_.clear();
         }
+
+        // Clear active session + per-session snapshots, and purge any
+        // persisted pending session-ends (do not deliver) — consent posture.
+        {
+            std::lock_guard<std::mutex> lock(session_mutex_);
+            session_id_.clear();
+            session_actor_id_.clear();
+            session_account_id_.clear();
+            session_license_id_.clear();
+            session_started_at_.clear();
+        }
+        purge_pending_session_ends();
 
         // Set flush status
         flush_status_.store(FlushStatus::OptedOut);
@@ -768,38 +860,26 @@ void Tracker::reset() {
     try {
         // Operates regardless of enabled or opt-out state
 
-        // Step 1: End active session (fire-and-forget)
+        // Step 1: Clear active session + per-session snapshots.
+        // reset() discards identity, so any active or pending session-end is
+        // PURGED (not delivered) — consistent with the SDK's consent posture
+        // (mirrors optOut). The durable end is intentionally NOT persisted.
         {
             std::lock_guard<std::mutex> lock(session_mutex_);
-            if (!session_id_.empty()) {
-                std::string old_session_id = session_id_;
-                session_id_.clear();
-
-                // Fire-and-forget session end in background thread
-                std::string api_key = options_.api_key;
-                std::string base_url = options_.api_base_url;
-                auto logger = options_.logger;
-                std::thread([old_session_id, api_key, base_url, logger]() {
-                    try {
-                        nlohmann::json body;
-                        body["session_id"] = old_session_id;
-                        body["ended_at"] = utc_iso8601_now();
-                        body["end_reason"] = "normal";
-
-                        internal::HttpClient http;
-                        if (http.init(logger)) {
-                            std::string url = base_url + "/v1/events/sessions/end";
-                            http.post_json(url, api_key, body.dump());
-                        }
-                    } catch (...) {}
-                }).detach();
-            }
+            session_id_.clear();
+            session_actor_id_.clear();
+            session_account_id_.clear();
+            session_license_id_.clear();
+            session_started_at_.clear();
 
             // Step 2: Clear actor ID + account/license context.
             actor_id_.clear();
             account_id_.clear();
             license_id_.clear();
         }
+
+        // Purge any persisted pending session-ends (do not deliver).
+        purge_pending_session_ends();
 
         // Step 3: Clear in-memory queue
         {
@@ -1250,6 +1330,35 @@ void Tracker::init_disk_queue() {
             if (err_msg) sqlite3_free(err_msg);
         }
 
+        // Sibling table for durable pending session-ends. SEPARATE from the
+        // homogeneous event queue (queued_events) — session-lifecycle records
+        // are delivered to /v1/events/sessions/end, not /v1/events, so they
+        // must not be mixed into the event batch. A queue keyed by session_id:
+        // one offline run can produce multiple unsent ends (startSession ends
+        // the prior session before starting a new one).
+        const char* create_pending_sql =
+            "CREATE TABLE IF NOT EXISTS pending_session_ends ("
+            "    id INTEGER PRIMARY KEY AUTOINCREMENT,"
+            "    session_id TEXT NOT NULL,"
+            "    actor_id TEXT NOT NULL,"
+            "    source_app TEXT NOT NULL,"
+            "    product_version TEXT NOT NULL,"
+            "    started_at TEXT NOT NULL,"
+            "    account_id TEXT,"
+            "    license_id TEXT,"
+            "    ended_at TEXT NOT NULL,"
+            "    end_reason TEXT NOT NULL"
+            ");";
+
+        char* err_msg2 = nullptr;
+        rc = sqlite3_exec(db_, create_pending_sql, nullptr, nullptr, &err_msg2);
+        if (rc != SQLITE_OK) {
+            log(LogLevel::Warning,
+                std::string("beacon: failed to create pending_session_ends table: ") +
+                (err_msg2 ? err_msg2 : "unknown error"));
+            if (err_msg2) sqlite3_free(err_msg2);
+        }
+
         // Default rollback journal (NOT WAL): keeps the main .db reflecting the queue
         // size for the max_queue_size_mb cap, and WAL buys nothing for this single-
         // connection, write-on-failure-only queue. Explicit DELETE also migrates any
@@ -1268,6 +1377,7 @@ void Tracker::init_disk_queue() {
 }
 
 void Tracker::enqueue_to_disk(const std::vector<std::string>& events) {
+    std::lock_guard<std::mutex> db_lock(db_mutex_);
     if (!db_ || events.empty()) return;
 
     try {
@@ -1348,6 +1458,7 @@ void Tracker::enqueue_to_disk(const std::vector<std::string>& events) {
 
 std::vector<internal::QueuedEvent> Tracker::dequeue_from_disk(int limit) {
     std::vector<internal::QueuedEvent> result;
+    std::lock_guard<std::mutex> db_lock(db_mutex_);
     if (!db_) return result;
 
     const char* select_sql =
@@ -1381,6 +1492,7 @@ std::vector<internal::QueuedEvent> Tracker::dequeue_from_disk(int limit) {
 }
 
 void Tracker::delete_from_disk(const std::vector<int64_t>& ids) {
+    std::lock_guard<std::mutex> db_lock(db_mutex_);
     if (!db_ || ids.empty()) return;
 
     std::ostringstream oss;
@@ -1395,6 +1507,7 @@ void Tracker::delete_from_disk(const std::vector<int64_t>& ids) {
 }
 
 void Tracker::enforce_disk_queue_size() {
+    std::lock_guard<std::mutex> db_lock(db_mutex_);
     if (!db_) return;
 
     int64_t max_bytes = static_cast<int64_t>(options_.max_queue_size_mb) * 1024 * 1024;
@@ -1440,6 +1553,314 @@ int64_t Tracker::get_disk_queue_file_size() const {
     }
     return 0;
 #endif
+}
+
+// ---------- Pending session-end (durable session-end) helpers ----------
+
+bool Tracker::build_pending_end_from_snapshot(const std::string& ended_at,
+                                              const std::string& end_reason,
+                                              internal::PendingSessionEnd& out) const {
+    // Caller must hold session_mutex_.
+    if (session_id_.empty()) return false;
+
+    out.id = 0;
+    out.session_id = session_id_;
+    // Read from SNAPSHOTS, never from the live actor_id_/account_id_/license_id_
+    // (the .NET port lesson). Fall back to the live actor only if the snapshot
+    // is somehow empty (defensive — should not happen for an active session).
+    out.actor_id = !session_actor_id_.empty() ? session_actor_id_ : actor_id_;
+    out.source_app = options_.product;
+    out.product_version = options_.product_version;
+    out.started_at = session_started_at_;
+    out.account_id = session_account_id_;
+    out.license_id = session_license_id_;
+    out.ended_at = ended_at;
+    out.end_reason = end_reason;
+    return true;
+}
+
+int64_t Tracker::persist_pending_session_end(const internal::PendingSessionEnd& rec) {
+    std::lock_guard<std::mutex> db_lock(db_mutex_);
+    if (!db_ || rec.session_id.empty()) return 0;
+
+    try {
+        const char* insert_sql =
+            "INSERT INTO pending_session_ends "
+            "(session_id, actor_id, source_app, product_version, started_at, "
+            " account_id, license_id, ended_at, end_reason) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);";
+
+        sqlite3_stmt* stmt = nullptr;
+        if (sqlite3_prepare_v2(db_, insert_sql, -1, &stmt, nullptr) != SQLITE_OK) {
+            return 0;
+        }
+
+        sqlite3_bind_text(stmt, 1, rec.session_id.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(stmt, 2, rec.actor_id.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(stmt, 3, rec.source_app.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(stmt, 4, rec.product_version.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(stmt, 5, rec.started_at.c_str(), -1, SQLITE_TRANSIENT);
+        // account_id / license_id: NULL when absent so the recovery payload
+        // can distinguish "absent" from "present but empty".
+        if (rec.account_id.empty()) {
+            sqlite3_bind_null(stmt, 6);
+        } else {
+            sqlite3_bind_text(stmt, 6, rec.account_id.c_str(), -1, SQLITE_TRANSIENT);
+        }
+        if (rec.license_id.empty()) {
+            sqlite3_bind_null(stmt, 7);
+        } else {
+            sqlite3_bind_text(stmt, 7, rec.license_id.c_str(), -1, SQLITE_TRANSIENT);
+        }
+        sqlite3_bind_text(stmt, 8, rec.ended_at.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(stmt, 9, rec.end_reason.c_str(), -1, SQLITE_TRANSIENT);
+
+        int rc = sqlite3_step(stmt);
+        sqlite3_finalize(stmt);
+
+        if (rc != SQLITE_DONE) return 0;
+        return sqlite3_last_insert_rowid(db_);
+    } catch (...) {
+        return 0;
+    }
+}
+
+std::vector<internal::PendingSessionEnd> Tracker::dequeue_pending_session_ends(int limit) {
+    std::vector<internal::PendingSessionEnd> result;
+    std::lock_guard<std::mutex> db_lock(db_mutex_);
+    if (!db_) return result;
+
+    const char* select_sql =
+        "SELECT id, session_id, actor_id, source_app, product_version, "
+        "       started_at, account_id, license_id, ended_at, end_reason "
+        "FROM pending_session_ends ORDER BY id ASC LIMIT ?;";
+
+    sqlite3_stmt* stmt = nullptr;
+    if (sqlite3_prepare_v2(db_, select_sql, -1, &stmt, nullptr) != SQLITE_OK) {
+        return result;
+    }
+
+    sqlite3_bind_int(stmt, 1, limit);
+
+    while (sqlite3_step(stmt) == SQLITE_ROW) {
+        internal::PendingSessionEnd rec;
+        rec.id = sqlite3_column_int64(stmt, 0);
+
+        auto col = [&](int i) -> std::string {
+            const char* t = reinterpret_cast<const char*>(sqlite3_column_text(stmt, i));
+            return t ? std::string(t) : std::string();
+        };
+
+        rec.session_id = col(1);
+        rec.actor_id = col(2);
+        rec.source_app = col(3);
+        rec.product_version = col(4);
+        rec.started_at = col(5);
+        rec.account_id = col(6); // empty if SQL NULL
+        rec.license_id = col(7);
+        rec.ended_at = col(8);
+        rec.end_reason = col(9);
+        result.push_back(std::move(rec));
+    }
+
+    sqlite3_finalize(stmt);
+    return result;
+}
+
+void Tracker::delete_pending_session_end(int64_t id) {
+    std::lock_guard<std::mutex> db_lock(db_mutex_);
+    if (!db_) return;
+
+    const char* delete_sql = "DELETE FROM pending_session_ends WHERE id = ?;";
+    sqlite3_stmt* stmt = nullptr;
+    if (sqlite3_prepare_v2(db_, delete_sql, -1, &stmt, nullptr) != SQLITE_OK) {
+        return;
+    }
+    sqlite3_bind_int64(stmt, 1, id);
+    sqlite3_step(stmt);
+    sqlite3_finalize(stmt);
+}
+
+void Tracker::purge_pending_session_ends() {
+    std::lock_guard<std::mutex> db_lock(db_mutex_);
+    if (!db_) return;
+    sqlite3_exec(db_, "DELETE FROM pending_session_ends;", nullptr, nullptr, nullptr);
+}
+
+void Tracker::mark_pending_session_ends_as_recovery() {
+    // Called once at construction: every record that survived a prior process
+    // is a recovery delivery. Records added during THIS run keep "normal".
+    std::lock_guard<std::mutex> db_lock(db_mutex_);
+    if (!db_) return;
+    sqlite3_exec(db_,
+        "UPDATE pending_session_ends SET end_reason = 'sdk_recovery';",
+        nullptr, nullptr, nullptr);
+}
+
+std::string Tracker::build_session_end_payload(const internal::PendingSessionEnd& rec,
+                                               bool recovery) const {
+    nlohmann::json body;
+    body["session_id"] = rec.session_id;
+    body["ended_at"] = rec.ended_at;
+    body["end_reason"] = rec.end_reason;
+
+    if (recovery) {
+        // Self-contained recovery payload — matches the server's
+        // create-on-recovery reader and the session-START field names
+        // (snake_case, omit-when-null).
+        body["actor_id"] = rec.actor_id;
+        body["product"] = rec.source_app;
+        body["product_version"] = rec.product_version;
+        body["started_at"] = rec.started_at;
+        if (!rec.account_id.empty()) body["account_id"] = rec.account_id;
+        if (!rec.license_id.empty()) body["license_id"] = rec.license_id;
+    }
+    // Live "normal" ends stay minimal (session_id/ended_at/end_reason).
+
+    return body.dump();
+}
+
+bool Tracker::deliver_session_end(internal::HttpClient& http,
+                                  const internal::PendingSessionEnd& rec,
+                                  bool recovery,
+                                  long timeout_seconds,
+                                  bool& retain_as_recovery) {
+    retain_as_recovery = false;
+
+    std::string url = options_.api_base_url + "/v1/events/sessions/end";
+    std::string payload = build_session_end_payload(rec, recovery);
+
+    internal::HttpResult result =
+        http.post_json(url, options_.api_key, payload, "", timeout_seconds);
+
+    if (result.success) {
+        return true; // delivered → delete
+    }
+
+    // Network / transport error: retain for the next attempt.
+    if (result.is_network_error) {
+        return false;
+    }
+
+    // Structured session_not_found (server PRD wire contract). A 404 that
+    // carries this body means the start hasn't landed yet (same-run race) or
+    // the session never existed server-side. It is NON-TERMINAL:
+    //   - On a recovery delivery, the server's create-on-recovery owns it, so
+    //     a session_not_found here means we should DROP it locally (it has been
+    //     handed off / can't be resolved by re-sending the same recovery).
+    //   - On a live "normal" delivery, RETAIN and re-deliver as sdk_recovery.
+    // Scope strictly to status 404 WITH a session_not_found body — a bare 404
+    // from a wrong api_base_url / missing route / un-upgraded server must NOT
+    // be retained forever; treat those as ordinary permanent failures (drop).
+    if (result.status_code == 404) {
+        bool is_session_not_found = false;
+        try {
+            if (!result.body.empty()) {
+                auto j = nlohmann::json::parse(result.body, nullptr, false);
+                if (!j.is_discarded() && j.is_object()) {
+                    // Accept either {"error":"session_not_found"} or
+                    // {"error":{"code":"session_not_found"}} shapes.
+                    if (j.contains("error")) {
+                        const auto& err = j["error"];
+                        if (err.is_string()) {
+                            is_session_not_found = (err.get<std::string>() == "session_not_found");
+                        } else if (err.is_object() && err.contains("code") &&
+                                   err["code"].is_string()) {
+                            is_session_not_found =
+                                (err["code"].get<std::string>() == "session_not_found");
+                        }
+                    }
+                    if (!is_session_not_found && j.contains("code") &&
+                        j["code"].is_string()) {
+                        is_session_not_found =
+                            (j["code"].get<std::string>() == "session_not_found");
+                    }
+                }
+            }
+        } catch (...) {
+            is_session_not_found = false;
+        }
+
+        if (is_session_not_found) {
+            if (recovery) {
+                // create-on-recovery owns it — drop locally.
+                return true;
+            }
+            // Live end raced the start → retain + re-deliver as recovery.
+            retain_as_recovery = true;
+            return false;
+        }
+        // Bare 404 (wrong URL / missing route / old server): permanent, drop.
+        log(LogLevel::Warning,
+            "beacon: session-end POST returned 404 without session_not_found "
+            "(check api_base_url / server version). Record discarded.");
+        return true;
+    }
+
+    // 401: API key rejected — permanent for this credential. Drop (the event
+    // path halts on 401; for a single session-end we discard rather than loop).
+    if (result.status_code == 401) {
+        log(LogLevel::Error,
+            "beacon: API key rejected (401) on session-end. Record discarded.");
+        return true;
+    }
+
+    // 402 (cap) and other retryable codes: retain for a later attempt.
+    if (result.status_code == 402 || internal::RetryPolicy::is_retryable(result)) {
+        return false;
+    }
+
+    // Any other permanent 4xx: drop.
+    if (internal::RetryPolicy::is_permanent_failure(result)) {
+        log(LogLevel::Warning,
+            "beacon: permanent HTTP error " + std::to_string(result.status_code) +
+            " on session-end. Record discarded.");
+        return true;
+    }
+
+    // Unknown: retain conservatively.
+    return false;
+}
+
+void Tracker::drain_pending_session_ends() {
+    if (!db_ || halted_.load()) return;
+    if (opted_out_.load()) return;
+    if (!flush_http_ || !flush_http_->is_initialized()) return;
+
+    // Deliver oldest-first. Each record carries its own end_reason: records
+    // that survived a prior process were rewritten to "sdk_recovery" at
+    // construction; records enqueued this run carry "normal".
+    auto pending = dequeue_pending_session_ends(options_.max_batch_size);
+    for (const auto& rec : pending) {
+        if (shutdown_requested_.load() || halted_.load()) break;
+
+        bool recovery = (rec.end_reason == "sdk_recovery");
+        bool retain_as_recovery = false;
+        bool should_delete = deliver_session_end(
+            *flush_http_, rec, recovery,
+            kSessionEndDeliveryTimeoutSeconds, retain_as_recovery);
+
+        if (should_delete) {
+            delete_pending_session_end(rec.id);
+        } else if (retain_as_recovery) {
+            // A live "normal" end raced the start → flip it to sdk_recovery in
+            // the store so the next drain delivers the full self-contained
+            // recovery payload that create-on-recovery resolves.
+            std::lock_guard<std::mutex> db_lock(db_mutex_);
+            if (db_) {
+                sqlite3_stmt* stmt = nullptr;
+                const char* upd =
+                    "UPDATE pending_session_ends SET end_reason = 'sdk_recovery' "
+                    "WHERE id = ?;";
+                if (sqlite3_prepare_v2(db_, upd, -1, &stmt, nullptr) == SQLITE_OK) {
+                    sqlite3_bind_int64(stmt, 1, rec.id);
+                    sqlite3_step(stmt);
+                    sqlite3_finalize(stmt);
+                }
+            }
+        }
+        // else: retained as-is for a later attempt (network / 402 / retryable).
+    }
 }
 
 // ---------- Flush thread ----------
@@ -1493,6 +1914,12 @@ void Tracker::flush_thread_loop() {
 
         // Then drain memory queue
         drain_memory_queue();
+
+        // Finally drain the pending session-end store (Part B). Doing this in
+        // the flush thread loop covers BOTH the periodic async tick AND a
+        // synchronous flush() (which wakes this loop), so
+        // endSession(); flush(); delivers the end when online.
+        drain_pending_session_ends();
 
         // Release flush semaphore
         {

@@ -193,6 +193,64 @@ private:
     void enforce_disk_queue_size();
     int64_t get_disk_queue_file_size() const;
 
+    // ---- Pending session-end (durable session-end) helpers ----
+    // The `pending_session_ends` sibling table lives in the same
+    // beacon_queue.db file but is kept SEPARATE from the homogeneous event
+    // queue. All of these reuse the existing db_ connection (5s busy_timeout),
+    // which is safe because the flush thread is already joined at destruct time
+    // and these are short single-row statements elsewhere.
+
+    // Build a self-contained PendingSessionEnd from the current session
+    // SNAPSHOTS (session_actor_id_/account/license/started_at), stamping
+    // ended_at = now. Caller must hold session_mutex_. Returns false if there
+    // is no active session (session_id_ empty).
+    bool build_pending_end_from_snapshot(const std::string& ended_at,
+                                         const std::string& end_reason,
+                                         internal::PendingSessionEnd& out) const;
+
+    // Persist one pending session-end record. Returns the assigned rowid, or 0
+    // on failure / when the store is unavailable.
+    int64_t persist_pending_session_end(const internal::PendingSessionEnd& rec);
+
+    // Read up to `limit` pending session-ends, oldest first.
+    std::vector<internal::PendingSessionEnd> dequeue_pending_session_ends(int limit);
+
+    // Delete one pending session-end by rowid.
+    void delete_pending_session_end(int64_t id);
+
+    // Delete ALL pending session-ends (opt-out / reset purge).
+    void purge_pending_session_ends();
+
+    // Rewrite every persisted pending session-end's end_reason to
+    // "sdk_recovery". Called once at construction: any record that survived a
+    // prior process is a recovery delivery. Records enqueued during THIS run
+    // keep "normal" and are delivered minimally.
+    void mark_pending_session_ends_as_recovery();
+
+    // Build the JSON body for a session-end POST from a record. `recovery`
+    // selects the full self-contained recovery payload (all start fields)
+    // vs the minimal live payload (session_id/ended_at/end_reason).
+    std::string build_session_end_payload(const internal::PendingSessionEnd& rec,
+                                          bool recovery) const;
+
+    // Synchronously POST one pending session-end on the given client.
+    // Returns true if the record should be DELETED from the store (delivered,
+    // permanently rejected, or a non-terminal session_not_found on a recovery
+    // delivery that create-on-recovery owns). Returns false to RETAIN (network
+    // error / retryable / 402 / a same-run session_not_found that should be
+    // re-delivered as recovery). When retain_as_recovery is set true, the
+    // caller should rewrite the record's end_reason to "sdk_recovery".
+    bool deliver_session_end(internal::HttpClient& http,
+                             const internal::PendingSessionEnd& rec,
+                             bool recovery,
+                             long timeout_seconds,
+                             bool& retain_as_recovery);
+
+    // Drain the pending session-end store via the flush thread's HttpClient,
+    // delivering each as end_reason="sdk_recovery" with the ORIGINAL ended_at.
+    // Called from the flush thread (next-launch recovery + flush()).
+    void drain_pending_session_ends();
+
     // Breadcrumb helpers
     void add_breadcrumb(const std::string& category, const std::string& name,
                         const std::string& timestamp,
@@ -214,6 +272,21 @@ private:
     // Account / license context — set via setAccount/setLicense, cleared by reset().
     std::string account_id_;
     std::string license_id_;
+
+    // ---- Per-session SNAPSHOTS (captured at session start) ----
+    // CRITICAL (.NET port lesson): the durable session-end record MUST be built
+    // from the context that was live WHEN THE SESSION STARTED, never from the
+    // live members at end time. In the .NET SDK, startSession(newActor)
+    // overwrote the live actor/account/license BEFORE ending the prior session,
+    // so the prior end captured the WRONG actor. These snapshots are repointed
+    // only inside start_session_impl, and only AFTER the prior session's end
+    // has been built from the OLD snapshot values. All persist paths
+    // (endSession, ~Tracker, start replacement) read these, not actor_id_ /
+    // account_id_ / license_id_. Guarded by session_mutex_.
+    std::string session_actor_id_;
+    std::string session_account_id_;
+    std::string session_license_id_;
+    std::string session_started_at_;
 
     // Memory queue
     mutable std::mutex queue_mutex_;
@@ -256,6 +329,18 @@ private:
     // SQLite disk queue
     sqlite3* db_ = nullptr;
     std::string db_path_;
+
+    // Serializes ALL access to db_ across threads. The event-queue methods
+    // were previously called only from the flush thread (and the destructor
+    // after join), so they needed no lock. The durable session-end path now
+    // also writes db_ from the CALLING thread (endSession / startSession
+    // replacement) concurrently with the flush thread's drain. Although the
+    // connection is opened SQLITE_OPEN_FULLMUTEX (so individual API calls are
+    // safe), a multi-statement BEGIN/COMMIT in enqueue_to_disk is not atomic
+    // against another thread's statements on the same connection — this mutex
+    // makes every db_ operation mutually exclusive. Acquired by the db_*
+    // helpers themselves; never held across a network call.
+    mutable std::mutex db_mutex_;
 
     // HTTP client for flush thread (owned by flush thread lifetime)
     std::unique_ptr<internal::HttpClient> flush_http_;
