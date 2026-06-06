@@ -44,8 +44,9 @@ static constexpr socket_t kInvalidSocket = INVALID_SOCKET;
 #else
 #  include <arpa/inet.h>
 #  include <netinet/in.h>
+#  include <sys/select.h> // select(), fd_set for the acceptor poll
 #  include <sys/socket.h>
-#  include <sys/time.h> // struct timeval for SO_RCVTIMEO
+#  include <sys/time.h>   // struct timeval
 #  include <unistd.h>
 using socket_t = int;
 static constexpr socket_t kInvalidSocket = -1;
@@ -202,6 +203,23 @@ public:
 private:
     void accept_loop() {
         while (running_.load()) {
+            // Poll for a pending connection with a timeout so the acceptor
+            // re-checks running_ every 100ms and exits cleanly on stop() — on
+            // EVERY platform. A bare blocking accept() can't be portably woken
+            // by close()/closesocket() from another thread (unspecified on
+            // Linux, racy on Windows), which deadlocks join(). select() makes
+            // the wakeup deterministic; accept() is only called once a
+            // connection is ready, so it never blocks.
+            fd_set rfds;
+            FD_ZERO(&rfds);
+            FD_SET(listen_fd_, &rfds);
+            timeval tv{};
+            tv.tv_sec = 0;
+            tv.tv_usec = 100000; // 100ms
+            int sel = ::select(static_cast<int>(listen_fd_) + 1, &rfds, nullptr, nullptr, &tv);
+            if (!running_.load()) break;
+            if (sel <= 0) continue; // timeout or error → re-check running_
+
             sockaddr_in client{};
             socklen_t clen = sizeof(client);
             socket_t fd = ::accept(listen_fd_, reinterpret_cast<sockaddr*>(&client), &clen);
