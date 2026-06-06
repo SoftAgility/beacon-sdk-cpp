@@ -45,6 +45,7 @@ static constexpr socket_t kInvalidSocket = INVALID_SOCKET;
 #  include <arpa/inet.h>
 #  include <netinet/in.h>
 #  include <sys/socket.h>
+#  include <sys/time.h> // struct timeval for SO_RCVTIMEO
 #  include <unistd.h>
 using socket_t = int;
 static constexpr socket_t kInvalidSocket = -1;
@@ -91,6 +92,26 @@ public:
         int yes = 1;
         ::setsockopt(listen_fd_, SOL_SOCKET, SO_REUSEADDR,
                      reinterpret_cast<const char*>(&yes), sizeof(yes));
+
+        // Make accept() time out periodically so the acceptor thread can observe
+        // running_ == false and exit cleanly. close()ing the listen fd from
+        // another thread does NOT reliably wake a blocked accept() on Linux
+        // (POSIX leaves this unspecified), which would deadlock stop()'s join().
+        // SO_RCVTIMEO is honored for accept() on Linux/macOS; on Windows the
+        // existing closesocket() already wakes accept(), so this is belt-and-
+        // suspenders there. The accept_loop treats the resulting EAGAIN/timeout
+        // (fd == kInvalidSocket) as "re-check running_ and continue".
+#if defined(_WIN32)
+        DWORD accept_timeout_ms = 100;
+        ::setsockopt(listen_fd_, SOL_SOCKET, SO_RCVTIMEO,
+                     reinterpret_cast<const char*>(&accept_timeout_ms), sizeof(accept_timeout_ms));
+#else
+        struct timeval accept_timeout {};
+        accept_timeout.tv_sec = 0;
+        accept_timeout.tv_usec = 100000; // 100ms
+        ::setsockopt(listen_fd_, SOL_SOCKET, SO_RCVTIMEO,
+                     &accept_timeout, sizeof(accept_timeout));
+#endif
 
         sockaddr_in addr{};
         addr.sin_family = AF_INET;
