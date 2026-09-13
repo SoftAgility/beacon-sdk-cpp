@@ -169,3 +169,46 @@ TEST(RetryPolicyTest, RetryAfterLargeValue) {
     auto delay = beacon::internal::RetryPolicy::compute_delay(0, 300);
     EXPECT_EQ(delay.count(), 300000); // 300 seconds in ms
 }
+
+// --- FR-2366: rate-limit cooldown ------------------------------------------------------
+//
+// compute_cooldown_seconds answers a different question from compute_delay. compute_delay
+// asks "how long before retrying THIS batch"; after a 429 that is the wrong question, because
+// every other queued batch is charged against the same exhausted per-minute budget, so
+// retrying one batch and moving on to the next both fail for the same reason.
+
+// AC-3451: a missing Retry-After falls back to the server's own one-minute bucket.
+TEST(RetryPolicyTest, CooldownWithoutRetryAfterUsesTheServerBucket) {
+    EXPECT_EQ(beacon::internal::RetryPolicy::compute_cooldown_seconds(-1),
+              beacon::internal::RetryPolicy::default_cooldown_seconds);
+}
+
+// AC-3451: a normal Retry-After is honoured as sent.
+TEST(RetryPolicyTest, CooldownHonoursAServerSuppliedRetryAfter) {
+    EXPECT_EQ(beacon::internal::RetryPolicy::compute_cooldown_seconds(45), 45);
+}
+
+// AC-3452: Retry-After: 0 must still produce a real pause. Treating it literally would set a
+// deadline of "now" — no cooldown at all — and the next tick walks back into the same limit.
+TEST(RetryPolicyTest, CooldownFloorsAZeroRetryAfter) {
+    EXPECT_GE(beacon::internal::RetryPolicy::compute_cooldown_seconds(0), 1);
+}
+
+// AC-3452: same for a negative value that is not the -1 sentinel.
+TEST(RetryPolicyTest, CooldownFloorsANonsensicalNegativeRetryAfter) {
+    EXPECT_GE(beacon::internal::RetryPolicy::compute_cooldown_seconds(-999), 1);
+}
+
+// AC-3453: a day-long Retry-After is not a real instruction. Obeying it verbatim would let a
+// single bad response silence the SDK for the rest of the process lifetime.
+TEST(RetryPolicyTest, CooldownClampsAnAbsurdRetryAfter) {
+    EXPECT_EQ(beacon::internal::RetryPolicy::compute_cooldown_seconds(86400),
+              beacon::internal::RetryPolicy::max_cooldown_seconds);
+}
+
+// The ceiling must stay above the server's own bucket, or a legitimate Retry-After would be
+// truncated and the client would resume while still over the limit.
+TEST(RetryPolicyTest, CooldownCeilingExceedsTheServerBucket) {
+    EXPECT_GT(beacon::internal::RetryPolicy::max_cooldown_seconds,
+              beacon::internal::RetryPolicy::default_cooldown_seconds);
+}

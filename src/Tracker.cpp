@@ -1909,17 +1909,24 @@ void Tracker::flush_thread_loop() {
             flush_in_progress_ = true;
         }
 
-        // Drain disk queue first
-        drain_disk_queue();
+        // FR-2366: honour a server-issued Retry-After across the WHOLE cycle. The drains are
+        // skipped rather than the loop iteration, so a synchronous flush() still gets its
+        // completion signal below instead of blocking until the cooldown expires.
+        if (is_rate_limit_cooldown_active()) {
+            flush_status_.store(FlushStatus::Offline);
+        } else {
+            // Drain disk queue first
+            drain_disk_queue();
 
-        // Then drain memory queue
-        drain_memory_queue();
+            // Then drain memory queue
+            drain_memory_queue();
 
-        // Finally drain the pending session-end store (Part B). Doing this in
-        // the flush thread loop covers BOTH the periodic async tick AND a
-        // synchronous flush() (which wakes this loop), so
-        // endSession(); flush(); delivers the end when online.
-        drain_pending_session_ends();
+            // Finally drain the pending session-end store (Part B). Doing this in
+            // the flush thread loop covers BOTH the periodic async tick AND a
+            // synchronous flush() (which wakes this loop), so
+            // endSession(); flush(); delivers the end when online.
+            drain_pending_session_ends();
+        }
 
         // Release flush semaphore
         {
@@ -1993,10 +2000,36 @@ void Tracker::drain_disk_queue() {
         delete_from_disk(ids);
         log(LogLevel::Warning, "beacon: permanent HTTP error " + std::to_string(result.status_code) +
             " for disk queue batch. Events discarded.");
+    } else if (result.status_code == 429) {
+        // FR-2366: leave the batch on disk and hold off the next cycle.
+        enter_rate_limit_cooldown(result.retry_after_seconds);
     } else {
         // Retryable or network error - leave in disk queue for next cycle
         flush_status_.store(FlushStatus::Offline);
     }
+}
+
+// FR-2366 -------------------------------------------------------------------------------
+
+bool Tracker::is_rate_limit_cooldown_active() const {
+    const int64_t until = rate_limited_until_ms_.load();
+    if (until == 0) return false;
+
+    const int64_t now = std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::steady_clock::now().time_since_epoch()).count();
+    return now < until;
+}
+
+void Tracker::enter_rate_limit_cooldown(int retry_after_seconds) {
+    const int seconds = internal::RetryPolicy::compute_cooldown_seconds(retry_after_seconds);
+
+    const int64_t now = std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::steady_clock::now().time_since_epoch()).count();
+    rate_limited_until_ms_.store(now + static_cast<int64_t>(seconds) * 1000);
+
+    flush_status_.store(FlushStatus::Offline);
+    log(LogLevel::Warning, "beacon: rate limited by the server. Pausing sends for " +
+        std::to_string(seconds) + "s; queued events are preserved and sent after the pause.");
 }
 
 void Tracker::drain_memory_queue() {
@@ -2076,6 +2109,20 @@ void Tracker::drain_memory_queue() {
                 // Write to disk queue, leave for later
                 enqueue_to_disk(batch);
                 flush_status_.store(FlushStatus::Offline);
+                return;
+            }
+
+            // FR-2366: 429 is handled here rather than by RetryPolicy, and it returns instead
+            // of breaking. The old path treated it as an ordinary retryable error: up to
+            // max_retries attempts, each preceded by a sleep of the full Retry-After, and then
+            // the enclosing while-loop moved on to the NEXT batch and did it all again. With a
+            // 60s Retry-After and ten batches queued that is half an hour of blocked flush
+            // thread and forty rejected requests, to deliver nothing. Every remaining batch is
+            // charged against the same exhausted per-minute budget, so retrying and continuing
+            // are both guaranteed to fail. Persist and wait.
+            if (result.status_code == 429) {
+                enqueue_to_disk(batch);
+                enter_rate_limit_cooldown(result.retry_after_seconds);
                 return;
             }
 

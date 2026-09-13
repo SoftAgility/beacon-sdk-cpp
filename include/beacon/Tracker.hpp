@@ -257,12 +257,20 @@ private:
                         const std::unordered_map<std::string, std::string>& properties);
     std::vector<internal::BreadcrumbEntry> snapshot_breadcrumbs() const;
 
+    // FR-2366: server-issued Retry-After, honoured across flush cycles rather than slept
+    // through on the flush thread. See the definitions in Tracker.cpp for why.
+    bool is_rate_limit_cooldown_active() const;
+    void enter_rate_limit_cooldown(int retry_after_seconds);
+
     // --- Member fields ---
     Options options_;
     std::atomic<bool> disposed_{false};
     std::atomic<bool> halted_{false};
     std::atomic<bool> opted_out_{false};
     std::atomic<FlushStatus> flush_status_{FlushStatus::NotConnected};
+
+    // Steady-clock milliseconds until which every send is suppressed after a 429. 0 = none.
+    std::atomic<int64_t> rate_limited_until_ms_{0};
 
     // Actor & session state
     mutable std::mutex session_mutex_;

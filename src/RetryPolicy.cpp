@@ -22,6 +22,15 @@ bool RetryPolicy::is_permanent_failure(const HttpResult& result) {
     return false;
 }
 
+int RetryPolicy::compute_cooldown_seconds(int retry_after_seconds) {
+    // A negative value is the "no Retry-After header" sentinel from HttpResult.
+    int seconds = retry_after_seconds < 0 ? default_cooldown_seconds : retry_after_seconds;
+
+    // Floor at 1: a Retry-After of 0 would produce a deadline of "now", i.e. no cooldown at
+    // all, and the next tick would walk straight back into the same limit.
+    return std::max(1, std::min(seconds, max_cooldown_seconds));
+}
+
 std::chrono::milliseconds RetryPolicy::compute_delay(int attempt, int retry_after_seconds) {
     if (retry_after_seconds >= 0) {
         return std::chrono::milliseconds(retry_after_seconds * 1000);
