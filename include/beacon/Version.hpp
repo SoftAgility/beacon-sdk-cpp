@@ -10,13 +10,15 @@
 //   - Surfacing the SDK version in customer support tickets
 //
 // The values are kept in sync with the project(beacon_sdk VERSION ...)
-// declaration in CMakeLists.txt by hand. A drift-lock test in the CI matrix
-// will fail if they diverge.
+// declaration in CMakeLists.txt by hand. tests/test_version.cpp is the
+// drift-lock: it compares these macros against the version CMake actually
+// built with, so a bump that edits one file and forgets the other fails CI
+// rather than shipping a library that misreports its own version.
 
-#define BEACON_VERSION_MAJOR  4
+#define BEACON_VERSION_MAJOR  5
 #define BEACON_VERSION_MINOR  0
 #define BEACON_VERSION_PATCH  0
-#define BEACON_VERSION_STRING "4.0.0"
+#define BEACON_VERSION_STRING "5.0.0"
 
 namespace beacon {
 

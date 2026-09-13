@@ -6,6 +6,22 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [5.0.0] - 2026-09-12
+
+### Changed
+
+- **BREAKING (ABI) — `Tracker` gained a data member. Consumers must recompile.** `Tracker` now holds a `std::atomic<int64_t>` recording the rate-limit cooldown deadline, which changes `sizeof(Tracker)`. Because the library ships as a SHARED library and exposes `Tracker` directly with no pImpl, that is binary-incompatible with 4.x by the same rule that forced the 4.0.0 major bump. Major bump + `SOVERSION 5`. **No source-level breakage** — existing code compiles unchanged.
+
+  Worth being explicit about why a behaviour fix forced a major: nothing in the public API moved, and the temptation is to ship it as a patch. A consumer who upgraded the shared library without recompiling would link 4.x headers against a differently-sized `Tracker` and corrupt memory — silently, and nowhere near the rate-limiting code that caused it. The pImpl-less design makes every added member a major bump; that is the cost of exposing the type directly, and it is worth paying visibly rather than discovering it in a customer's crash dump.
+
+- **A 429 now stops the drain for a cooldown instead of being retried through, batch by batch.** `RetryPolicy::is_retryable` classifies 429 as retryable, so `drain_memory_queue` retried it up to `max_retries` times — with `compute_delay` returning the full `Retry-After` before each attempt — and then the enclosing loop advanced to the next batch and repeated the whole sequence. Ten queued batches against a 60-second `Retry-After` meant roughly half an hour of blocked flush thread and forty rejected requests, to deliver nothing.
+
+  A rate limit is not a per-batch condition. Every remaining batch is charged against the same exhausted per-minute budget, so retrying one and moving to the next both fail for the same reason. 429 is now handled ahead of `RetryPolicy` in both drains: the batch is persisted to the disk queue, a cooldown is armed, and the drain returns. The cooldown gates the three drain calls rather than the flush-loop iteration, so a synchronous `flush()` still receives its completion signal instead of blocking until the window expires.
+
+### Added
+
+- **`RetryPolicy::compute_cooldown_seconds(int)`**, plus `default_cooldown_seconds` (60) and `max_cooldown_seconds` (300). It answers a different question from `compute_delay`: not "how long before retrying this batch" but "how long before sending anything at all". A missing `Retry-After` falls back to the server's own one-minute bucket; the value is floored at 1 second (a literal 0 would mean no cooldown) and clamped at 300 (beyond that it is a misconfigured proxy, not an instruction).
+
 ## [4.0.0] - 2026-06-05
 
 ### Added

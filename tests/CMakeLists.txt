@@ -30,6 +30,7 @@ set(TEST_SOURCES
     test_options_validation.cpp
     test_account_license_context.cpp
     test_session_end_durability.cpp
+    test_version.cpp
 )
 
 add_executable(beacon_tests ${TEST_SOURCES})
@@ -46,6 +47,14 @@ target_include_directories(beacon_tests
     PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/../src
         ${CMAKE_CURRENT_SOURCE_DIR}/../include
+)
+
+# Drift-lock: hand the test the version CMake actually built with, so
+# test_version.cpp can assert Version.hpp agrees with CMakeLists.txt.
+target_compile_definitions(beacon_tests
+    PRIVATE
+        BEACON_CMAKE_PROJECT_VERSION="${PROJECT_VERSION}"
+        BEACON_CMAKE_SOVERSION=${BEACON_SDK_SOVERSION}
 )
 
 include(GoogleTest)
