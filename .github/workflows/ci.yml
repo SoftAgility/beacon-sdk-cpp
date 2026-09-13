@@ -13,6 +13,8 @@ jobs:
   build-test:
     name: ${{ matrix.os }} / ${{ matrix.cxx }}
     runs-on: ${{ matrix.os }}
+    # A hung test must not burn a 6-hour runner. See the ctest --timeout below.
+    timeout-minutes: 25
     strategy:
       fail-fast: false
       matrix:
@@ -53,7 +55,16 @@ jobs:
         run: cmake --build build --config Release --parallel
 
       - name: Test
-        run: ctest --test-dir build -C Release --output-on-failure
+        # --timeout bounds each test individually. gtest_discover_tests runs every
+        # test in its own process, and a few tracker tests intermittently wedge under
+        # that contention — different ones each run, passing in under a second when
+        # run alone. Without a per-test bound ctest waits forever and the job dies at
+        # GitHub's 6-hour limit instead of failing in two minutes. 120s is ~60x the
+        # slowest legitimate test. This bounds the symptom, not the cause: the
+        # contention itself is unfixed, and a timeout failure here means that flake,
+        # not a regression in the named test. Reproduce with two consecutive local
+        # ctest runs and compare which tests time out - the sets differ.
+        run: ctest --test-dir build -C Release --output-on-failure --timeout 120
 
       - name: Verify install rules produce a clean prefix
         shell: bash
